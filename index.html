@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Billetterie Supabase USB</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+html,body{margin:0;height:100%;font-family:Arial,sans-serif;background:#eef2f7;overflow:hidden}
+*{box-sizing:border-box}
+.app{height:100vh;padding:14px;display:flex;flex-direction:column;gap:12px}
+.header{background:#0f172a;color:white;border-radius:22px;padding:18px 22px}
+.header small{opacity:.72}.header h1{margin:6px 0;font-size:42px}.header p{margin:0;font-size:21px;opacity:.82}
+.top-actions{display:flex;gap:10px}
+.connect-main,.mode-btn{background:#111827;color:white;border:none;border-radius:16px;padding:14px 18px;font-size:18px;font-weight:700}
+.mode-btn.active{background:#2563eb}
+.status-main{flex:1;background:white;border-radius:16px;padding:14px 18px;font-size:16px;color:#334155;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.layout{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,2fr)420px;gap:14px}
+.left{min-height:0;overflow-y:auto;padding-right:4px}
+.section{background:white;border-radius:22px;padding:18px;margin-bottom:14px}
+.grid-entry{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.grid-atelier{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.ticket-btn{border:none;border-radius:18px;color:white;padding:28px 12px;font-size:21px;font-weight:700}
+.entry{background:#2563eb}.atelier{background:#7c3aed}
+.side{background:white;border-radius:22px;padding:16px;min-height:0;display:flex;flex-direction:column}
+.cart-scroll{flex:1;min-height:0;overflow-y:auto}
+.cart-item{border:1px solid #ddd;border-radius:16px;padding:10px;margin-bottom:8px}
+.cart-line{display:flex;justify-content:space-between;gap:10px;font-weight:700}
+.qty-row{display:flex;align-items:center;gap:10px;margin-top:8px}
+.qty-btn{width:38px;height:38px;border:none;border-radius:10px;background:#e5e7eb;font-size:22px;font-weight:700}
+.qty-num{font-size:20px;font-weight:700}
+.checkout{border-top:1px solid #e5e7eb;padding-top:12px;background:white}
+.total{background:#0f172a;color:white;border-radius:18px;padding:16px;margin-bottom:10px}
+.total .amount{font-size:46px;font-weight:700}
+.pay{width:100%;border:none;border-radius:16px;padding:20px;margin-top:10px;color:white;font-size:28px;font-weight:700}
+.pay:disabled,.ticket-btn:disabled{opacity:.45}
+.esp{background:#16a34a}.cb{background:#f59e0b}
+.clear{width:100%;border:1px solid #ddd;background:white;border-radius:14px;padding:13px;margin-top:10px;font-size:17px}
+.admin-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:99}
+.admin{width:980px;max-height:90vh;overflow-y:auto;background:white;border-radius:24px;padding:24px}
+.input,select{width:100%;padding:14px;border:1px solid #ddd;border-radius:14px;font-size:18px;margin:8px 0}
+.admin-btn{width:100%;border:none;border-radius:14px;padding:16px;font-size:18px;margin-top:10px;background:#111827;color:white}
+.green{background:#16a34a}.red{background:#ef4444}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.stat{background:#f8fafc;border-radius:16px;padding:16px}
+.stat div:last-child{font-size:26px;font-weight:700}
+.status{background:#f8fafc;border-radius:14px;padding:12px;margin-top:12px;white-space:pre-wrap;font-family:monospace}
+.table-row{display:grid;grid-template-columns:1fr 90px 100px;gap:8px;margin-bottom:8px}
+.sale-row{background:#f8fafc;border-radius:14px;padding:12px;margin-bottom:8px;font-size:14px}
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#111827;color:white;padding:16px 24px;border-radius:18px;font-size:20px;font-weight:700;display:none;z-index:120}
+.printing{position:fixed;inset:0;background:rgba(255,255,255,.5);display:none;align-items:center;justify-content:center;z-index:110}
+.printing-box{background:white;padding:24px 34px;border-radius:20px;font-size:24px;font-weight:700}
+@media(max-width:900px){html,body{overflow:auto;height:auto}.app{height:auto}.layout{grid-template-columns:1fr}.grid-entry,.grid-atelier{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+
+<body>
+<div class="app">
+  <div class="header" id="adminHold">
+    <small>Appuyez longuement ici pour admin</small>
+    <h1 id="eventTitle">Japan Manga Wave</h1>
+    <p><span id="eventDateText">2026-04-25</span> — <span id="eventLocationText">Caen Parc Expo</span></p>
+  </div>
+
+  <div class="top-actions">
+    <button class="connect-main" onclick="connectPrinter()">Connecter imprimante USB</button>
+    <button class="mode-btn active" id="modePanierBtn" onclick="setMode('panier')">Mode panier</button>
+    <button class="mode-btn" id="modeRapideBtn" onclick="setMode('rapide')">Mode rapide ESP</button>
+    <div class="status-main" id="usbStatusTop">Imprimante: non connectée</div>
+  </div>
+
+  <div class="layout">
+    <main class="left">
+      <div class="section">
+        <h2>Ticket entrée</h2>
+        <div class="grid-entry" id="entryButtons"></div>
+      </div>
+
+      <div class="section">
+        <h2>Ticket atelier</h2>
+        <div class="grid-atelier" id="atelierButtons"></div>
+      </div>
+    </main>
+
+    <aside class="side">
+      <h2>Panier</h2>
+      <div class="cart-scroll" id="cart"></div>
+
+      <div class="checkout">
+        <div class="total">
+          <div>Total</div>
+          <div class="amount" id="total">0€</div>
+        </div>
+        <button class="pay esp" onclick="pay('ESP')">ESP</button>
+        <button class="pay cb" onclick="pay('CB')">CB</button>
+        <button class="clear" onclick="clearCart()">Vider panier</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="admin-overlay" id="adminOverlay">
+  <div class="admin">
+    <button class="clear" onclick="closeAdmin()">Fermer</button>
+
+    <h2>Imprimante USB</h2>
+    <button class="admin-btn" onclick="connectPrinter()">Connecter imprimante USB</button>
+    <button class="admin-btn green" onclick="testPrint()">Test print</button>
+    <div class="status" id="usbStatus">Non connecté</div>
+
+    <h2>Statistiques ventes</h2>
+    <div class="stats">
+      <div class="stat"><div>Ventes</div><div id="statSales">0</div></div>
+      <div class="stat"><div>Tickets</div><div id="statTickets">0</div></div>
+      <div class="stat"><div>CA total</div><div id="statCA">0€</div></div>
+      <div class="stat"><div>CA ESP</div><div id="statESP">0€</div></div>
+      <div class="stat"><div>CA CB</div><div id="statCB">0€</div></div>
+    </div>
+    <button class="admin-btn red" onclick="resetSales()">Reset historique ventes</button>
+
+    <h2>Dernières ventes</h2>
+    <div id="salesHistory"></div>
+
+    <h2>Paramètres événement</h2>
+    <input class="input" id="eventNameInput" placeholder="Nom événement">
+    <input class="input" id="eventDateInput" placeholder="Date">
+    <input class="input" id="eventLocationInput" placeholder="Lieu">
+    <button class="admin-btn green" onclick="saveEvent()">Sauvegarder événement</button>
+
+    <h2>Créer billet</h2>
+    <input class="input" id="newTicketName" placeholder="Nom du billet">
+    <input class="input" id="newTicketPrice" placeholder="Prix">
+    <select id="newTicketType">
+      <option value="entry">Entrée</option>
+      <option value="atelier">Atelier</option>
+    </select>
+    <button class="admin-btn green" onclick="createTicket()">Ajouter billet</button>
+
+    <h2>Billets entrée</h2>
+    <div id="adminEntry"></div>
+
+    <h2>Billets atelier</h2>
+    <div id="adminAtelier"></div>
+  </div>
+</div>
+
+<div class="printing" id="printingOverlay"><div class="printing-box">Impression en cours...</div></div>
+<div class="toast" id="toast">Ticket imprimé</div>
+
+<script>
+const SUPABASE_URL = "https://twcgyjhtgxtzaohkzuzg.supabase.co";
+const SUPABASE_KEY = "sb_publishable_Vn8zxLyyMX2OG2NtbCbHKA_8YcQqe1S";
+const ADMIN_CODE = "2026";
+
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let device = null;
+let endpoint = null;
+let iface = null;
+let holdTimer = null;
+let printing = false;
+
+let state = {
+  mode: localStorage.getItem("mode") || "panier",
+  event: { name: "Japan Manga Wave", date: "2026-04-25", location: "Caen Parc Expo" },
+  tickets: { entry: [], atelier: [] },
+  cart: [],
+  sales: []
+};
+
+function clean(v){return String(v).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/€/g," EUR").replace(/[^\x20-\x7E\n]/g,"")}
+function txt(v){return new TextEncoder().encode(clean(v))}
+function cmd(...b){return new Uint8Array(b)}
+function concat(arrays){let total=arrays.reduce((s,a)=>s+a.length,0);let out=new Uint8Array(total);let offset=0;arrays.forEach(a=>{out.set(a,offset);offset+=a.length});return out}
+function showToast(msg){const t=document.getElementById("toast");t.textContent=msg;t.style.display="block";setTimeout(()=>t.style.display="none",1200)}
+function setPrinting(v){printing=v;document.getElementById("printingOverlay").style.display=v?"flex":"none";renderButtonsState()}
+function renderButtonsState(){document.querySelectorAll("button").forEach(b=>{if(b.className.includes("ticket-btn")||b.className.includes("pay"))b.disabled=printing})}
+function setUsbStatus(msg){const line=msg||"Non connecté";document.getElementById("usbStatus").textContent=line;document.getElementById("usbStatusTop").textContent="Imprimante: "+line.replace(/\n/g," | ")}
+
+async function loadRemoteData(){
+  const { data: eventData, error: eventError } = await supabase
+    .from("event_settings")
+    .select("*")
+    .eq("id", "main")
+    .single();
+
+  if (!eventError && eventData) {
+    state.event = {
+      name: eventData.name,
+      date: eventData.event_date,
+      location: eventData.location
+    };
+  }
+
+  const { data: ticketData } = await supabase
+    .from("tickets")
+    .select("*")
+    .eq("is_active", true)
+    .order("type", { ascending: true })
+    .order("sort_order", { ascending: true });
+
+  state.tickets.entry = [];
+  state.tickets.atelier = [];
+
+  (ticketData || []).forEach(t => {
+    const item = {
+      id: t.id,
+      name: t.name,
+      price: Number(t.price),
+      type: t.type === "entry" ? "Entree" : "Atelier",
+      dbType: t.type,
+      sort_order: t.sort_order
+    };
+
+    if (t.type === "entry") state.tickets.entry.push(item);
+    if (t.type === "atelier") state.tickets.atelier.push(item);
+  });
+
+  await loadSales();
+  render();
+}
+
+async function loadSales(){
+  const { data: sales } = await supabase
+    .from("sales")
+    .select("*, sale_items(*)")
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  state.sales = (sales || []).map(s => ({
+    id: s.id,
+    method: s.payment_method,
+    total: Number(s.total),
+    createdAt: s.created_at,
+    items: (s.sale_items || []).map(i => ({
+      id: i.ticket_id,
+      name: i.ticket_name,
+      type: i.ticket_type,
+      price: Number(i.price),
+      qty: i.quantity
+    }))
+  }));
+}
+
+async function connectPrinter(){
+  try{
+    device = await navigator.usb.requestDevice({ filters:[{ vendorId:0x04b8 }] });
+    await device.open();
+    if(!device.configuration) await device.selectConfiguration(1);
+
+    endpoint = null;
+    iface = null;
+
+    for(const i of device.configuration.interfaces){
+      for(const alt of i.alternates){
+        const ep = alt.endpoints.find(e=>e.direction==="out");
+        if(ep){ iface = i.interfaceNumber; endpoint = ep.endpointNumber; break; }
+      }
+      if(endpoint) break;
+    }
+
+    if(iface === null || endpoint === null){
+      setUsbStatus("Erreur: endpoint OUT introuvable");
+      return;
+    }
+
+    await device.claimInterface(iface);
+    setUsbStatus("Connecté: "+device.productName+"\nInterface: "+iface+"\nEndpoint: "+endpoint);
+    showToast("Imprimante connectée");
+  }catch(e){
+    setUsbStatus("Erreur connexion: "+e.message);
+  }
+}
+
+async function send(data){
+  if(!device){
+    alert("Connectez d'abord l'imprimante USB.");
+    return false;
+  }
+
+  try{
+    await device.transferOut(endpoint, data);
+    return true;
+  }catch(e){
+    alert("Erreur impression: "+e.message);
+    return false;
+  }
+}
+
+function saleNumber(){
+  const d = new Date();
+  return "V"+String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+"-"+Math.floor(1000+Math.random()*9000);
+}
+
+function randomCode(prefix){
+  const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let out=prefix+"-";
+  for(let i=0;i<8;i++) out += chars[Math.floor(Math.random()*chars.length)];
+  return out;
+}
+
+function buildTicket(item, method, saleId, code){
+  return concat([
+    cmd(0x1B,0x40),
+    cmd(0x1B,0x61,0x01),cmd(0x1B,0x45,0x01),cmd(0x1D,0x21,0x11),
+    txt("TICKET\n"),
+    cmd(0x1D,0x21,0x00),cmd(0x1B,0x45,0x00),
+    txt(state.event.name+"\n"),txt(state.event.date+"\n"),txt(state.event.location+"\n"),txt("------------------------------\n"),
+    cmd(0x1B,0x45,0x01),txt(item.name+"\n"),cmd(0x1B,0x45,0x00),
+    cmd(0x1B,0x61,0x00),
+    txt("Type: "+item.type+"\n"),
+    txt("Prix: "+item.price+" EUR\n"),
+    txt("Paiement: "+method+"\n"),
+    txt("Vente: "+saleId+"\n"),
+    txt("Code: "+code+"\n"),
+    cmd(0x1B,0x61,0x01),
+    txt("------------------------------\n"),
+    cmd(0x1B,0x45,0x01),cmd(0x1D,0x21,0x11),
+    txt(code+"\n"),
+    cmd(0x1D,0x21,0x00),cmd(0x1B,0x45,0x00),
+    txt("1 billet = 1 ticket\n"),
+    txt("\n\n\n\n"),
+    cmd(0x1D,0x56,0x42,0x00)
+  ]);
+}
+
+async function testPrint(){
+  if(printing) return;
+  setPrinting(true);
+  const item = { name:"TEST PRINT", price:0, type:"Test" };
+  const ok = await send(buildTicket(item, "TEST", "TEST", "TEST-OK"));
+  setPrinting(false);
+  if(ok){ setUsbStatus("Test envoyé"); showToast("Test imprimé"); }
+}
+
+function setMode(mode){
+  state.mode = mode;
+  localStorage.setItem("mode", mode);
+  document.getElementById("modePanierBtn").classList.toggle("active", mode==="panier");
+  document.getElementById("modeRapideBtn").classList.toggle("active", mode==="rapide");
+  showToast(mode==="rapide" ? "Mode rapide ESP" : "Mode panier");
+}
+
+function render(){
+  document.getElementById("eventTitle").textContent = state.event.name;
+  document.getElementById("eventDateText").textContent = state.event.date;
+  document.getElementById("eventLocationText").textContent = state.event.location;
+  document.getElementById("modePanierBtn").classList.toggle("active", state.mode==="panier");
+  document.getElementById("modeRapideBtn").classList.toggle("active", state.mode==="rapide");
+
+  document.getElementById("entryButtons").innerHTML = state.tickets.entry.map(t => `
+    <button class="ticket-btn entry" onclick="handleTicket('${t.id}','entry')">${t.name}<br>${t.price}€</button>
+  `).join("");
+
+  document.getElementById("atelierButtons").innerHTML = state.tickets.atelier.map(t => `
+    <button class="ticket-btn atelier" onclick="handleTicket('${t.id}','atelier')">${t.name}<br>${t.price}€</button>
+  `).join("");
+
+  const cartEl = document.getElementById("cart");
+  if(state.cart.length === 0) cartEl.innerHTML = "<div>Aucun billet</div>";
+  else cartEl.innerHTML = state.cart.map((i,index)=>`
+    <div class="cart-item">
+      <div class="cart-line"><span>${i.name} x${i.qty}</span><span>${i.price*i.qty}€</span></div>
+      <div class="qty-row">
+        <button class="qty-btn" onclick="changeQty(${index},-1)">-</button>
+        <span class="qty-num">${i.qty}</span>
+        <button class="qty-btn" onclick="changeQty(${index},1)">+</button>
+      </div>
+    </div>
+  `).join("");
+
+  document.getElementById("total").textContent = totalCart()+"€";
+  renderStats();
+  renderAdminTickets();
+  renderHistory();
+  renderButtonsState();
+}
+
+async function handleTicket(id, kind){
+  const ticket = state.tickets[kind].find(t=>t.id===id);
+  if(!ticket) return;
+
+  if(state.mode === "rapide"){
+    await printSingleSale(ticket, "ESP");
+  } else {
+    addToCart(id, kind);
+  }
+}
+
+function addToCart(id, kind){
+  const ticket = state.tickets[kind].find(t=>t.id===id);
+  if(!ticket) return;
+
+  const found = state.cart.find(i=>i.id===id);
+  if(found) found.qty++;
+  else state.cart.push({...ticket, qty:1});
+
+  render();
+}
+
+function changeQty(index, delta){
+  state.cart[index].qty += delta;
+  if(state.cart[index].qty <= 0) state.cart.splice(index, 1);
+  render();
+}
+
+function clearCart(){
+  state.cart = [];
+  render();
+}
+
+function totalCart(){
+  return state.cart.reduce((s,i)=>s+i.price*i.qty,0);
+}
+
+async function printSingleSale(ticket, method){
+  if(printing) return;
+  setPrinting(true);
+
+  const saleId = saleNumber();
+  const code = randomCode(ticket.type==="Entree" ? "ENT" : "ATL");
+  const ok = await send(buildTicket(ticket, method, saleId, code));
+
+  if(ok){
+    await saveSaleToSupabase(saleId, method, ticket.price, [{...ticket, qty:1}]);
+    await loadSales();
+    render();
+    showToast("Ticket imprimé");
+  }
+
+  setPrinting(false);
+}
+
+async function pay(method){
+  if(printing) return;
+  if(state.cart.length === 0){
+    alert("Panier vide");
+    return;
+  }
+
+  setPrinting(true);
+
+  const saleId = saleNumber();
+  const saleItems = JSON.parse(JSON.stringify(state.cart));
+  const total = totalCart();
+
+  for(const item of state.cart){
+    for(let i=0;i<item.qty;i++){
+      const code = randomCode(item.type==="Entree" ? "ENT" : "ATL");
+      const ok = await send(buildTicket(item, method, saleId, code));
+      if(!ok){
+        setPrinting(false);
+        return;
+      }
+      await new Promise(r=>setTimeout(r,180));
+    }
+  }
+
+  await saveSaleToSupabase(saleId, method, total, saleItems);
+  state.cart = [];
+  await loadSales();
+  render();
+  setPrinting(false);
+  showToast("Vente imprimée");
+}
+
+async function saveSaleToSupabase(saleId, method, total, items){
+  const { error: saleError } = await supabase
+    .from("sales")
+    .insert({ id: saleId, payment_method: method, total });
+
+  if(saleError){
+    alert("Erreur Supabase sale: " + saleError.message);
+    return;
+  }
+
+  const rows = items.map(i => ({
+    sale_id: saleId,
+    ticket_id: i.id,
+    ticket_name: i.name,
+    ticket_type: i.type,
+    price: i.price,
+    quantity: i.qty
+  }));
+
+  const { error: itemError } = await supabase
+    .from("sale_items")
+    .insert(rows);
+
+  if(itemError){
+    alert("Erreur Supabase items: " + itemError.message);
+  }
+}
+
+function renderStats(){
+  let tickets=0, ca=0, esp=0, cb=0;
+
+  state.sales.forEach(s=>{
+    ca += s.total;
+    if(s.method === "ESP") esp += s.total;
+    if(s.method === "CB") cb += s.total;
+    s.items.forEach(i=>tickets += i.qty);
+  });
+
+  document.getElementById("statSales").textContent = state.sales.length;
+  document.getElementById("statTickets").textContent = tickets;
+  document.getElementById("statCA").textContent = ca+"€";
+  document.getElementById("statESP").textContent = esp+"€";
+  document.getElementById("statCB").textContent = cb+"€";
+}
+
+function renderHistory(){
+  document.getElementById("salesHistory").innerHTML = state.sales.slice(0,10).map(s=>`
+    <div class="sale-row">
+      <b>${s.id}</b><br>
+      ${new Date(s.createdAt).toLocaleString()}<br>
+      Paiement: ${s.method} · Total: ${s.total}€<br>
+      ${s.items.map(i=>`${i.name} x${i.qty}`).join(", ")}
+    </div>
+  `).join("") || "<div>Aucune vente</div>";
+}
+
+function openAdmin(){
+  const code = prompt("Code admin");
+  if(code !== ADMIN_CODE) return;
+
+  document.getElementById("eventNameInput").value = state.event.name;
+  document.getElementById("eventDateInput").value = state.event.date;
+  document.getElementById("eventLocationInput").value = state.event.location;
+  document.getElementById("adminOverlay").style.display = "flex";
+  renderStats();
+  renderAdminTickets();
+  renderHistory();
+}
+
+function closeAdmin(){
+  document.getElementById("adminOverlay").style.display = "none";
+}
+
+async function saveEvent(){
+  const name = document.getElementById("eventNameInput").value;
+  const event_date = document.getElementById("eventDateInput").value;
+  const location = document.getElementById("eventLocationInput").value;
+
+  const { error } = await supabase
+    .from("event_settings")
+    .upsert({ id:"main", name, event_date, location, updated_at:new Date().toISOString() });
+
+  if(error){
+    alert("Erreur sauvegarde event: " + error.message);
+    return;
+  }
+
+  await loadRemoteData();
+  showToast("Événement sauvegardé");
+}
+
+async function createTicket(){
+  const name = document.getElementById("newTicketName").value.trim();
+  const price = Number(document.getElementById("newTicketPrice").value);
+  const type = document.getElementById("newTicketType").value;
+
+  if(!name || !price){
+    alert("Nom ou prix manquant");
+    return;
+  }
+
+  const { error } = await supabase
+    .from("tickets")
+    .insert({ name, price, type, is_active:true, sort_order:99 });
+
+  if(error){
+    alert("Erreur création billet: " + error.message);
+    return;
+  }
+
+  document.getElementById("newTicketName").value = "";
+  document.getElementById("newTicketPrice").value = "";
+
+  await loadRemoteData();
+  showToast("Billet ajouté");
+}
+
+function renderAdminTickets(){
+  document.getElementById("adminEntry").innerHTML = state.tickets.entry.map((t,index)=>`
+    <div class="table-row">
+      <input class="input" value="${t.name}" onchange="editTicket('${t.id}','name',this.value)">
+      <input class="input" value="${t.price}" onchange="editTicket('${t.id}','price',this.value)">
+      <button class="admin-btn red" onclick="deleteTicket('${t.id}')">Suppr.</button>
+    </div>
+  `).join("");
+
+  document.getElementById("adminAtelier").innerHTML = state.tickets.atelier.map((t,index)=>`
+    <div class="table-row">
+      <input class="input" value="${t.name}" onchange="editTicket('${t.id}','name',this.value)">
+      <input class="input" value="${t.price}" onchange="editTicket('${t.id}','price',this.value)">
+      <button class="admin-btn red" onclick="deleteTicket('${t.id}')">Suppr.</button>
+    </div>
+  `).join("");
+}
+
+async function editTicket(id, field, value){
+  const patch = {};
+  patch[field] = field === "price" ? Number(value) : value;
+
+  const { error } = await supabase
+    .from("tickets")
+    .update(patch)
+    .eq("id", id);
+
+  if(error){
+    alert("Erreur modification billet: " + error.message);
+    return;
+  }
+
+  await loadRemoteData();
+}
+
+async function deleteTicket(id){
+  const { error } = await supabase
+    .from("tickets")
+    .update({ is_active:false })
+    .eq("id", id);
+
+  if(error){
+    alert("Erreur suppression billet: " + error.message);
+    return;
+  }
+
+  await loadRemoteData();
+}
+
+async function resetSales(){
+  if(!confirm("Reset historique ventes ?")) return;
+
+  await supabase.from("sale_items").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+  await supabase.from("sales").delete().neq("id", "");
+
+  await loadSales();
+  render();
+}
+
+document.getElementById("adminHold").addEventListener("mousedown",()=>{holdTimer=setTimeout(openAdmin,1000)});
+document.getElementById("adminHold").addEventListener("mouseup",()=>clearTimeout(holdTimer));
+document.getElementById("adminHold").addEventListener("mouseleave",()=>clearTimeout(holdTimer));
+document.getElementById("adminHold").addEventListener("touchstart",()=>{holdTimer=setTimeout(openAdmin,1000)});
+document.getElementById("adminHold").addEventListener("touchend",()=>clearTimeout(holdTimer));
+
+loadRemoteData();
+setMode(state.mode);
+</script>
+</body>
+</html>
