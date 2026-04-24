@@ -109,6 +109,10 @@ html,body{margin:0;height:100%;font-family:Arial,sans-serif;background:#eef2f7;o
     <button class="admin-btn green" onclick="testPrint()">Test print</button>
     <div class="status" id="usbStatus">Non connecté</div>
 
+    <h2>Supabase</h2>
+    <button class="admin-btn green" onclick="loadRemoteData()">Recharger données</button>
+    <div class="status" id="dbStatus">Chargement...</div>
+
     <h2>Statistiques ventes</h2>
     <div class="stats">
       <div class="stat"><div>Ventes</div><div id="statSales">0</div></div>
@@ -117,7 +121,6 @@ html,body{margin:0;height:100%;font-family:Arial,sans-serif;background:#eef2f7;o
       <div class="stat"><div>CA ESP</div><div id="statESP">0€</div></div>
       <div class="stat"><div>CA CB</div><div id="statCB">0€</div></div>
     </div>
-    <button class="admin-btn red" onclick="resetSales()">Reset historique ventes</button>
 
     <h2>Dernières ventes</h2>
     <div id="salesHistory"></div>
@@ -153,21 +156,55 @@ const SUPABASE_URL = "https://twcgyjhtgxtzaohkzuzg.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Vn8zxLyyMX2OG2NtbCbHKA_8YcQqe1S";
 const ADMIN_CODE = "2026";
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
+let sb = null;
 let device = null;
 let endpoint = null;
 let iface = null;
 let holdTimer = null;
 let printing = false;
 
+const DEFAULT_TICKETS = {
+  entry: [
+    { id: "local-e1", name: "Pass journée", price: 14, type: "Entree", dbType: "entry" },
+    { id: "local-e2", name: "Pass week-end", price: 22, type: "Entree", dbType: "entry" }
+  ],
+  atelier: [
+    { id: "local-a1", name: "Atelier Sushi", price: 15, type: "Atelier", dbType: "atelier" },
+    { id: "local-a2", name: "Atelier Onigiri", price: 15, type: "Atelier", dbType: "atelier" },
+    { id: "local-a3", name: "Atelier Terrarium", price: 7, type: "Atelier", dbType: "atelier" },
+    { id: "local-a4", name: "Atelier Gyoza", price: 15, type: "Atelier", dbType: "atelier" },
+    { id: "local-a5", name: "Atelier Origami", price: 14, type: "Atelier", dbType: "atelier" },
+    { id: "local-a6", name: "Atelier Pokeball", price: 6, type: "Atelier", dbType: "atelier" },
+    { id: "local-a7", name: "Pass Gaming", price: 5, type: "Atelier", dbType: "atelier" }
+  ]
+};
+
 let state = {
   mode: localStorage.getItem("mode") || "panier",
   event: { name: "Japan Manga Wave", date: "2026-04-25", location: "Caen Parc Expo" },
-  tickets: { entry: [], atelier: [] },
+  tickets: JSON.parse(JSON.stringify(DEFAULT_TICKETS)),
   cart: [],
   sales: []
 };
+
+function setDbStatus(msg){
+  const el = document.getElementById("dbStatus");
+  if(el) el.textContent = msg;
+}
+
+function initSupabase(){
+  try{
+    if(!window.supabase){
+      setDbStatus("Erreur: librairie Supabase non chargée. Vérifiez internet.");
+      return false;
+    }
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    return true;
+  }catch(e){
+    setDbStatus("Erreur Supabase init: " + e.message);
+    return false;
+  }
+}
 
 function clean(v){return String(v).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/€/g," EUR").replace(/[^\x20-\x7E\n]/g,"")}
 function txt(v){return new TextEncoder().encode(clean(v))}
@@ -179,54 +216,89 @@ function renderButtonsState(){document.querySelectorAll("button").forEach(b=>{if
 function setUsbStatus(msg){const line=msg||"Non connecté";document.getElementById("usbStatus").textContent=line;document.getElementById("usbStatusTop").textContent="Imprimante: "+line.replace(/\n/g," | ")}
 
 async function loadRemoteData(){
-  const { data: eventData, error: eventError } = await supabase
-    .from("event_settings")
-    .select("*")
-    .eq("id", "main")
-    .single();
-
-  if (!eventError && eventData) {
-    state.event = {
-      name: eventData.name,
-      date: eventData.event_date,
-      location: eventData.location
-    };
+  if(!sb && !initSupabase()){
+    render();
+    return;
   }
 
-  const { data: ticketData } = await supabase
-    .from("tickets")
-    .select("*")
-    .eq("is_active", true)
-    .order("type", { ascending: true })
-    .order("sort_order", { ascending: true });
+  setDbStatus("Chargement Supabase...");
 
-  state.tickets.entry = [];
-  state.tickets.atelier = [];
+  try{
+    const { data: eventData, error: eventError } = await sb
+      .from("event_settings")
+      .select("*")
+      .eq("id", "main")
+      .single();
 
-  (ticketData || []).forEach(t => {
-    const item = {
-      id: t.id,
-      name: t.name,
-      price: Number(t.price),
-      type: t.type === "entry" ? "Entree" : "Atelier",
-      dbType: t.type,
-      sort_order: t.sort_order
-    };
+    if(eventError){
+      setDbStatus("Erreur event_settings: " + eventError.message + "\nMode local utilisé.");
+    }
 
-    if (t.type === "entry") state.tickets.entry.push(item);
-    if (t.type === "atelier") state.tickets.atelier.push(item);
-  });
+    if(!eventError && eventData){
+      state.event = {
+        name: eventData.name,
+        date: eventData.event_date,
+        location: eventData.location
+      };
+    }
 
-  await loadSales();
-  render();
+    const { data: ticketData, error: ticketError } = await sb
+      .from("tickets")
+      .select("*")
+      .eq("is_active", true)
+      .order("type", { ascending: true })
+      .order("sort_order", { ascending: true });
+
+    if(ticketError){
+      setDbStatus("Erreur tickets: " + ticketError.message + "\nMode local utilisé.");
+    }
+
+    if(!ticketError && ticketData && ticketData.length > 0){
+      state.tickets.entry = [];
+      state.tickets.atelier = [];
+
+      ticketData.forEach(t => {
+        const item = {
+          id: t.id,
+          name: t.name,
+          price: Number(t.price),
+          type: t.type === "entry" ? "Entree" : "Atelier",
+          dbType: t.type,
+          sort_order: t.sort_order
+        };
+
+        if(t.type === "entry") state.tickets.entry.push(item);
+        if(t.type === "atelier") state.tickets.atelier.push(item);
+      });
+
+      setDbStatus("Supabase OK: " + ticketData.length + " billets chargés.");
+    } else if(!ticketError) {
+      state.tickets = JSON.parse(JSON.stringify(DEFAULT_TICKETS));
+      setDbStatus("Supabase connecté, mais aucun billet trouvé. Mode local utilisé.");
+    }
+
+    await loadSales();
+    render();
+  }catch(e){
+    setDbStatus("Erreur générale Supabase: " + e.message + "\nMode local utilisé.");
+    state.tickets = JSON.parse(JSON.stringify(DEFAULT_TICKETS));
+    render();
+  }
 }
 
 async function loadSales(){
-  const { data: sales } = await supabase
+  if(!sb) return;
+
+  const { data: sales, error } = await sb
     .from("sales")
     .select("*, sale_items(*)")
     .order("created_at", { ascending: false })
     .limit(50);
+
+  if(error){
+    setDbStatus("Erreur sales: " + error.message);
+    return;
+  }
 
   state.sales = (sales || []).map(s => ({
     id: s.id,
@@ -466,25 +538,43 @@ async function pay(method){
 }
 
 async function saveSaleToSupabase(saleId, method, total, items){
-  const { error: saleError } = await supabase
+  if(!sb){
+    state.sales.unshift({
+      id:saleId,
+      method,
+      total,
+      items,
+      createdAt:new Date().toISOString()
+    });
+    return;
+  }
+
+  const { error: saleError } = await sb
     .from("sales")
     .insert({ id: saleId, payment_method: method, total });
 
   if(saleError){
     alert("Erreur Supabase sale: " + saleError.message);
+    state.sales.unshift({
+      id:saleId,
+      method,
+      total,
+      items,
+      createdAt:new Date().toISOString()
+    });
     return;
   }
 
   const rows = items.map(i => ({
     sale_id: saleId,
-    ticket_id: i.id,
+    ticket_id: String(i.id).startsWith("local-") ? null : i.id,
     ticket_name: i.name,
     ticket_type: i.type,
     price: i.price,
     quantity: i.qty
   }));
 
-  const { error: itemError } = await supabase
+  const { error: itemError } = await sb
     .from("sale_items")
     .insert(rows);
 
@@ -543,7 +633,12 @@ async function saveEvent(){
   const event_date = document.getElementById("eventDateInput").value;
   const location = document.getElementById("eventLocationInput").value;
 
-  const { error } = await supabase
+  if(!sb && !initSupabase()){
+    alert("Supabase non connecté");
+    return;
+  }
+
+  const { error } = await sb
     .from("event_settings")
     .upsert({ id:"main", name, event_date, location, updated_at:new Date().toISOString() });
 
@@ -566,7 +661,12 @@ async function createTicket(){
     return;
   }
 
-  const { error } = await supabase
+  if(!sb && !initSupabase()){
+    alert("Supabase non connecté");
+    return;
+  }
+
+  const { error } = await sb
     .from("tickets")
     .insert({ name, price, type, is_active:true, sort_order:99 });
 
@@ -583,7 +683,7 @@ async function createTicket(){
 }
 
 function renderAdminTickets(){
-  document.getElementById("adminEntry").innerHTML = state.tickets.entry.map((t,index)=>`
+  document.getElementById("adminEntry").innerHTML = state.tickets.entry.map(t=>`
     <div class="table-row">
       <input class="input" value="${t.name}" onchange="editTicket('${t.id}','name',this.value)">
       <input class="input" value="${t.price}" onchange="editTicket('${t.id}','price',this.value)">
@@ -591,7 +691,7 @@ function renderAdminTickets(){
     </div>
   `).join("");
 
-  document.getElementById("adminAtelier").innerHTML = state.tickets.atelier.map((t,index)=>`
+  document.getElementById("adminAtelier").innerHTML = state.tickets.atelier.map(t=>`
     <div class="table-row">
       <input class="input" value="${t.name}" onchange="editTicket('${t.id}','name',this.value)">
       <input class="input" value="${t.price}" onchange="editTicket('${t.id}','price',this.value)">
@@ -601,10 +701,20 @@ function renderAdminTickets(){
 }
 
 async function editTicket(id, field, value){
+  if(String(id).startsWith("local-")){
+    alert("Billet local. Ajoutez le billet dans Supabase pour le modifier en ligne.");
+    return;
+  }
+
+  if(!sb && !initSupabase()){
+    alert("Supabase non connecté");
+    return;
+  }
+
   const patch = {};
   patch[field] = field === "price" ? Number(value) : value;
 
-  const { error } = await supabase
+  const { error } = await sb
     .from("tickets")
     .update(patch)
     .eq("id", id);
@@ -618,7 +728,17 @@ async function editTicket(id, field, value){
 }
 
 async function deleteTicket(id){
-  const { error } = await supabase
+  if(String(id).startsWith("local-")){
+    alert("Billet local. Impossible de supprimer depuis Supabase.");
+    return;
+  }
+
+  if(!sb && !initSupabase()){
+    alert("Supabase non connecté");
+    return;
+  }
+
+  const { error } = await sb
     .from("tickets")
     .update({ is_active:false })
     .eq("id", id);
@@ -631,24 +751,15 @@ async function deleteTicket(id){
   await loadRemoteData();
 }
 
-async function resetSales(){
-  if(!confirm("Reset historique ventes ?")) return;
-
-  await supabase.from("sale_items").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-  await supabase.from("sales").delete().neq("id", "");
-
-  await loadSales();
-  render();
-}
-
 document.getElementById("adminHold").addEventListener("mousedown",()=>{holdTimer=setTimeout(openAdmin,1000)});
 document.getElementById("adminHold").addEventListener("mouseup",()=>clearTimeout(holdTimer));
 document.getElementById("adminHold").addEventListener("mouseleave",()=>clearTimeout(holdTimer));
 document.getElementById("adminHold").addEventListener("touchstart",()=>{holdTimer=setTimeout(openAdmin,1000)});
 document.getElementById("adminHold").addEventListener("touchend",()=>clearTimeout(holdTimer));
 
-loadRemoteData();
+render();
 setMode(state.mode);
+loadRemoteData();
 </script>
 </body>
 </html>
