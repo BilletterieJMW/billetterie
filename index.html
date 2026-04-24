@@ -1,24 +1,376 @@
-let adminTimer=null;
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Billetterie JMW</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-document.querySelector(".header").addEventListener("mousedown",()=>{
-  adminTimer=setTimeout(openAdmin,1000);
-});
-document.querySelector(".header").addEventListener("mouseup",()=>{
-  clearTimeout(adminTimer);
-});
-document.querySelector(".header").addEventListener("mouseleave",()=>{
-  clearTimeout(adminTimer);
-});
-document.querySelector(".header").addEventListener("touchstart",()=>{
-  adminTimer=setTimeout(openAdmin,1000);
-});
-document.querySelector(".header").addEventListener("touchend",()=>{
-  clearTimeout(adminTimer);
-});
+<style>
+body{margin:0;font-family:Arial;background:#eef2f7}
+.app{padding:14px}
+.header{background:#0f172a;color:white;border-radius:20px;padding:24px;margin-bottom:14px}
+.header h1{font-size:36px;margin:0}
+.header p{font-size:20px;margin:12px 0 0}
+.top{display:flex;gap:12px;margin-bottom:14px}
+button{border:0;border-radius:16px;padding:18px;font-size:20px;font-weight:700;cursor:pointer}
+.connect{background:#111827;color:white}
+.status{background:white;border-radius:16px;padding:18px;flex:1}
+.layout{display:grid;grid-template-columns:2fr 430px;gap:16px}
+.section{background:white;border-radius:22px;padding:20px;margin-bottom:16px}
+.entry-grid{display:grid;grid-template-columns:repeat(2,minmax(320px,430px));justify-content:center;gap:24px}
+.atelier-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.ticket{color:white;min-height:120px}
+.entry{background:#2563eb;font-size:30px;min-height:145px}
+.atelier{background:#7c3aed}
+.side{background:white;border-radius:22px;padding:18px}
+.cart-item{border:1px solid #ddd;border-radius:14px;padding:12px;margin-bottom:10px}
+.total{background:#0f172a;color:white;border-radius:18px;padding:18px;margin:16px 0}
+.total b{font-size:48px}
+.pay{width:100%;color:white;font-size:28px;margin-top:10px}
+.esp{background:#16a34a}
+.cb{background:#f59e0b}
+.clear{width:100%;background:white;border:1px solid #ddd;margin-top:10px}
+.admin-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;align-items:center;justify-content:center}
+.admin{background:white;width:900px;max-height:90vh;overflow:auto;border-radius:24px;padding:24px}
+.admin input,.admin select{width:100%;padding:14px;margin:6px 0;border:1px solid #ddd;border-radius:12px;font-size:18px}
+.admin-row{display:grid;grid-template-columns:1fr 90px 100px;gap:8px;margin-bottom:8px}
+.admin-btn{width:100%;margin-top:8px;color:white;background:#111827}
+.green{background:#16a34a}
+.red{background:#ef4444}
+</style>
+</head>
+
+<body>
+<div class="app">
+  <div class="header" id="adminHold">
+    <small>Appuyez longuement ici pour admin</small>
+    <h1 id="eventName">Japan Manga Wave</h1>
+    <p><span id="eventDate">2026-04-25</span> — <span id="eventLocation">Caen Parc Expo</span></p>
+  </div>
+
+  <div class="top">
+    <button class="connect" onclick="connectPrinter()">Connecter imprimante USB</button>
+    <div class="status" id="status">Initialisation...</div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="section">
+        <h2>Ticket entrée</h2>
+        <div class="entry-grid" id="entryButtons"></div>
+      </div>
+
+      <div class="section">
+        <h2>Ticket atelier</h2>
+        <div class="atelier-grid" id="atelierButtons"></div>
+      </div>
+    </div>
+
+    <div class="side">
+      <h2>Panier</h2>
+      <div id="cart"></div>
+
+      <div class="total">
+        <div>Total</div>
+        <b id="total">0€</b>
+      </div>
+
+      <button class="pay esp" onclick="pay('ESP')">ESP</button>
+      <button class="pay cb" onclick="pay('CB')">CB</button>
+      <button class="clear" onclick="clearCart()">Vider panier</button>
+    </div>
+  </div>
+</div>
+
+<div id="adminBox" class="admin-overlay">
+  <div class="admin">
+    <button class="clear" onclick="closeAdmin()">Fermer</button>
+
+    <h2>Admin</h2>
+
+    <h3>Événement</h3>
+    <input id="adminName" placeholder="Nom événement">
+    <input id="adminDate" placeholder="Date">
+    <input id="adminLocation" placeholder="Lieu">
+    <button class="admin-btn green" onclick="saveEvent()">Sauvegarder événement</button>
+
+    <h3>Créer billet</h3>
+    <input id="newTicketName" placeholder="Nom billet">
+    <input id="newTicketPrice" placeholder="Prix">
+    <select id="newTicketType">
+      <option value="entry">Entrée</option>
+      <option value="atelier">Atelier</option>
+    </select>
+    <button class="admin-btn green" onclick="createTicket()">Ajouter billet</button>
+
+    <h3>Billets entrée</h3>
+    <div id="adminEntry"></div>
+
+    <h3>Billets atelier</h3>
+    <div id="adminAtelier"></div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL="https://twcgyjhtgxtzaohkzuzg.supabase.co";
+const SUPABASE_KEY="sb_publishable_Vn8zxLyyMX2OG2NtbCbHKA_8YcQqe1S";
+const ADMIN_CODE="2026";
+
+let sb=null;
+let device=null;
+let endpoint=null;
+let holdTimer=null;
+
+let state={
+  event:{name:"Japan Manga Wave",date:"2026-04-25",location:"Caen Parc Expo"},
+  tickets:{
+    entry:[
+      {id:"e1",name:"Pass journée",price:14,type:"Entree"},
+      {id:"e2",name:"Pass week-end",price:22,type:"Entree"}
+    ],
+    atelier:[
+      {id:"a1",name:"Atelier Sushi",price:15,type:"Atelier"},
+      {id:"a2",name:"Atelier Onigiri",price:15,type:"Atelier"},
+      {id:"a3",name:"Atelier Terrarium",price:7,type:"Atelier"},
+      {id:"a4",name:"Atelier Gyoza",price:15,type:"Atelier"},
+      {id:"a5",name:"Atelier Origami",price:14,type:"Atelier"},
+      {id:"a6",name:"Atelier Pokeball",price:6,type:"Atelier"},
+      {id:"a7",name:"Pass Gaming",price:5,type:"Atelier"}
+    ]
+  },
+  cart:[]
+};
+
+function setStatus(msg){
+  document.getElementById("status").textContent=msg;
+}
+
+function render(){
+  document.getElementById("eventName").textContent=state.event.name;
+  document.getElementById("eventDate").textContent=state.event.date;
+  document.getElementById("eventLocation").textContent=state.event.location;
+
+  document.getElementById("entryButtons").innerHTML=state.tickets.entry.map(t=>`
+    <button class="ticket entry" onclick="add('${t.id}','entry')">
+      ${t.name}<br>${t.price}€
+    </button>
+  `).join("");
+
+  document.getElementById("atelierButtons").innerHTML=state.tickets.atelier.map(t=>`
+    <button class="ticket atelier" onclick="add('${t.id}','atelier')">
+      ${t.name}<br>${t.price}€
+    </button>
+  `).join("");
+
+  document.getElementById("cart").innerHTML=state.cart.map((i,index)=>`
+    <div class="cart-item">
+      <b>${i.name}</b><br>
+      ${i.price}€ x ${i.qty} = ${i.price*i.qty}€
+      <br>
+      <button onclick="changeQty(${index},-1)">-</button>
+      <button onclick="changeQty(${index},1)">+</button>
+    </div>
+  `).join("") || "Aucun billet";
+
+  document.getElementById("total").textContent=total()+"€";
+  renderAdminTickets();
+}
+
+async function loadSupabase(){
+  try{
+    if(!window.supabase){
+      setStatus("Supabase non chargé · mode local");
+      render();
+      return;
+    }
+
+    sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+    const ev=await sb.from("event_settings").select("*").eq("id","main").single();
+    if(!ev.error && ev.data){
+      state.event={
+        name:ev.data.name,
+        date:ev.data.event_date,
+        location:ev.data.location
+      };
+    }
+
+    const res=await sb
+      .from("tickets")
+      .select("*")
+      .eq("is_active",true)
+      .order("type",{ascending:true})
+      .order("sort_order",{ascending:true});
+
+    if(res.error){
+      setStatus("Erreur Supabase: "+res.error.message+" · mode local");
+      render();
+      return;
+    }
+
+    if(res.data && res.data.length>0){
+      state.tickets.entry=res.data
+        .filter(t=>t.type==="entry")
+        .map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Entree"}));
+
+      state.tickets.atelier=res.data
+        .filter(t=>t.type==="atelier")
+        .map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Atelier"}));
+
+      setStatus("Supabase OK · "+res.data.length+" billets chargés");
+    }
+
+    render();
+
+  }catch(e){
+    setStatus("Erreur JS: "+e.message+" · mode local");
+    render();
+  }
+}
+
+function add(id,kind){
+  const t=state.tickets[kind].find(x=>x.id===id);
+  if(!t)return;
+
+  const f=state.cart.find(x=>x.id===id);
+  if(f)f.qty++;
+  else state.cart.push({...t,qty:1});
+
+  render();
+}
+
+function changeQty(index,delta){
+  state.cart[index].qty+=delta;
+  if(state.cart[index].qty<=0)state.cart.splice(index,1);
+  render();
+}
+
+function clearCart(){
+  state.cart=[];
+  render();
+}
+
+function total(){
+  return state.cart.reduce((s,i)=>s+i.price*i.qty,0);
+}
+
+function clean(v){
+  return String(v).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/€/g," EUR").replace(/[^\x20-\x7E\n]/g,"");
+}
+
+function txt(v){return new TextEncoder().encode(clean(v))}
+function cmd(...b){return new Uint8Array(b)}
+function concat(arrays){
+  let total=arrays.reduce((s,a)=>s+a.length,0);
+  let out=new Uint8Array(total);
+  let offset=0;
+  arrays.forEach(a=>{out.set(a,offset);offset+=a.length});
+  return out;
+}
+
+async function connectPrinter(){
+  try{
+    device=await navigator.usb.requestDevice({filters:[{vendorId:0x04b8}]});
+    await device.open();
+    if(!device.configuration)await device.selectConfiguration(1);
+
+    endpoint=null;
+    let iface=null;
+
+    for(const i of device.configuration.interfaces){
+      for(const alt of i.alternates){
+        const ep=alt.endpoints.find(e=>e.direction==="out");
+        if(ep){
+          iface=i.interfaceNumber;
+          endpoint=ep.endpointNumber;
+          break;
+        }
+      }
+      if(endpoint)break;
+    }
+
+    await device.claimInterface(iface);
+    setStatus("Imprimante connectée: "+device.productName);
+  }catch(e){
+    setStatus("Erreur imprimante: "+e.message);
+  }
+}
+
+function saleId(){
+  const d=new Date();
+  return "V"+String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+"-"+Math.floor(1000+Math.random()*9000);
+}
+
+function codeTicket(prefix){
+  return prefix+"-"+Math.random().toString(36).substring(2,10).toUpperCase();
+}
+
+function ticketData(item,method,sale,code){
+  return concat([
+    cmd(0x1B,0x40),
+    cmd(0x1B,0x61,0x01),
+    cmd(0x1B,0x45,0x01),
+    cmd(0x1D,0x21,0x11),
+    txt("TICKET\n"),
+    cmd(0x1D,0x21,0x00),
+    cmd(0x1B,0x45,0x00),
+    txt(state.event.name+"\n"),
+    txt(state.event.date+"\n"),
+    txt(state.event.location+"\n"),
+    txt("Heure: "+new Date().toLocaleTimeString("fr-FR")+"\n"),
+    txt("------------------------------\n"),
+    txt(item.name+"\n"),
+    txt("Type: "+item.type+"\n"),
+    txt("Prix: "+item.price+" EUR\n"),
+    txt("Paiement: "+method+"\n"),
+    txt("Vente: "+sale+"\n"),
+    txt("Code: "+code+"\n"),
+    txt("------------------------------\n"),
+    cmd(0x1D,0x21,0x11),
+    txt(code+"\n"),
+    cmd(0x1D,0x21,0x00),
+    txt("1 billet = 1 ticket\n"),
+    txt("\n\n\n\n"),
+    cmd(0x1D,0x56,0x42,0x00)
+  ]);
+}
+
+async function printOne(item,method,sale){
+  if(!device){
+    alert("Connectez d'abord l'imprimante USB");
+    return false;
+  }
+
+  const code=codeTicket(item.type==="Entree"?"ENT":"ATL");
+  await device.transferOut(endpoint,ticketData(item,method,sale,code));
+  return true;
+}
+
+async function pay(method){
+  if(state.cart.length===0){
+    alert("Panier vide");
+    return;
+  }
+
+  const sale=saleId();
+
+  for(const item of state.cart){
+    for(let i=0;i<item.qty;i++){
+      const ok=await printOne(item,method,sale);
+      if(!ok)return;
+      await new Promise(r=>setTimeout(r,150));
+    }
+  }
+
+  state.cart=[];
+  render();
+  alert("Vente imprimée");
+}
 
 function openAdmin(){
   const code=prompt("Code admin");
-  if(code!=="2026") return;
+  if(code!==ADMIN_CODE)return;
 
   document.getElementById("adminName").value=state.event.name;
   document.getElementById("adminDate").value=state.event.date;
@@ -97,24 +449,24 @@ async function createTicket(){
 
 function renderAdminTickets(){
   document.getElementById("adminEntry").innerHTML=state.tickets.entry.map(t=>`
-    <div style="display:grid;grid-template-columns:1fr 90px 90px;gap:8px;margin-bottom:8px">
-      <input value="${t.name}" onchange="updateTicket('${t.id}','name',this.value)" style="padding:10px">
-      <input value="${t.price}" onchange="updateTicket('${t.id}','price',this.value)" style="padding:10px">
-      <button onclick="deleteTicket('${t.id}')" style="background:#ef4444;color:white">Suppr.</button>
+    <div class="admin-row">
+      <input value="${t.name}" onchange="updateTicket('${t.id}','name',this.value)">
+      <input value="${t.price}" onchange="updateTicket('${t.id}','price',this.value)">
+      <button class="red" onclick="deleteTicket('${t.id}')">Suppr.</button>
     </div>
   `).join("");
 
   document.getElementById("adminAtelier").innerHTML=state.tickets.atelier.map(t=>`
-    <div style="display:grid;grid-template-columns:1fr 90px 90px;gap:8px;margin-bottom:8px">
-      <input value="${t.name}" onchange="updateTicket('${t.id}','name',this.value)" style="padding:10px">
-      <input value="${t.price}" onchange="updateTicket('${t.id}','price',this.value)" style="padding:10px">
-      <button onclick="deleteTicket('${t.id}')" style="background:#ef4444;color:white">Suppr.</button>
+    <div class="admin-row">
+      <input value="${t.name}" onchange="updateTicket('${t.id}','name',this.value)">
+      <input value="${t.price}" onchange="updateTicket('${t.id}','price',this.value)">
+      <button class="red" onclick="deleteTicket('${t.id}')">Suppr.</button>
     </div>
   `).join("");
 }
 
 async function updateTicket(id,field,value){
-  if(!sb) return;
+  if(!sb)return;
 
   const patch={};
   patch[field]=field==="price"?Number(value):value;
@@ -131,7 +483,7 @@ async function updateTicket(id,field,value){
 }
 
 async function deleteTicket(id){
-  if(!sb) return;
+  if(!sb)return;
 
   const res=await sb.from("tickets").update({is_active:false}).eq("id",id);
 
@@ -143,3 +495,15 @@ async function deleteTicket(id){
   await loadSupabase();
   renderAdminTickets();
 }
+
+document.getElementById("adminHold").addEventListener("mousedown",()=>{holdTimer=setTimeout(openAdmin,1000)});
+document.getElementById("adminHold").addEventListener("mouseup",()=>clearTimeout(holdTimer));
+document.getElementById("adminHold").addEventListener("mouseleave",()=>clearTimeout(holdTimer));
+document.getElementById("adminHold").addEventListener("touchstart",()=>{holdTimer=setTimeout(openAdmin,1000)});
+document.getElementById("adminHold").addEventListener("touchend",()=>clearTimeout(holdTimer));
+
+render();
+loadSupabase();
+</script>
+</body>
+</html>
