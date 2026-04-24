@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Billetterie PRO</title>
+<title>Billetterie PRO FIX</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -10,21 +10,15 @@
 <style>
 body{margin:0;font-family:Arial;background:#eef2f7}
 .app{padding:14px}
+.header{background:#0f172a;color:white;border-radius:20px;padding:20px}
 
-.header{
-  background:#0f172a;color:white;border-radius:20px;padding:20px
-}
+.layout{display:grid;grid-template-columns:2fr 400px;gap:12px}
 
-.ticket-grid{
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  gap:16px;
-}
+.ticket-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
 
-/* ENTRY CENTER */
 #entryButtons{
   display:grid;
-  grid-template-columns:repeat(2, minmax(320px,420px));
+  grid-template-columns:repeat(2,minmax(320px,420px));
   justify-content:center;
   gap:24px;
 }
@@ -33,8 +27,8 @@ body{margin:0;font-family:Arial;background:#eef2f7}
   border:none;
   border-radius:16px;
   color:white;
-  min-height:115px;
-  font-size:24px;
+  min-height:110px;
+  font-size:22px;
   font-weight:bold;
 }
 
@@ -46,17 +40,7 @@ body{margin:0;font-family:Arial;background:#eef2f7}
 .entry{background:#2563eb}
 .atelier{background:#7c3aed}
 
-.layout{
-  display:grid;
-  grid-template-columns:2fr 400px;
-  gap:12px;
-}
-
-.side{
-  background:white;
-  border-radius:16px;
-  padding:12px;
-}
+.side{background:white;border-radius:16px;padding:12px}
 
 .pay{
   width:100%;
@@ -70,7 +54,6 @@ body{margin:0;font-family:Arial;background:#eef2f7}
 
 .esp{background:#16a34a}
 .cb{background:#f59e0b}
-
 </style>
 </head>
 
@@ -88,23 +71,21 @@ body{margin:0;font-family:Arial;background:#eef2f7}
 <div class="layout">
 
 <div>
-
 <h2>Entrée</h2>
 <div id="entryButtons"></div>
 
 <h2>Atelier</h2>
 <div id="atelierButtons" class="ticket-grid"></div>
-
 </div>
 
 <div class="side">
-  <h2>Panier</h2>
-  <div id="cart"></div>
+<h2>Panier</h2>
+<div id="cart"></div>
 
-  <h1 id="total">0€</h1>
+<h1 id="total">0€</h1>
 
-  <button class="pay esp" onclick="pay('ESP')">ESP</button>
-  <button class="pay cb" onclick="pay('CB')">CB</button>
+<button class="pay esp" onclick="pay('ESP')">ESP</button>
+<button class="pay cb" onclick="pay('CB')">CB</button>
 </div>
 
 </div>
@@ -112,36 +93,57 @@ body{margin:0;font-family:Arial;background:#eef2f7}
 </div>
 
 <script>
-const supabase = window.supabase.createClient(
-  "https://twcgyjhtgxtzaohkzuzg.supabase.co",
-  "sb_publishable_Vn8zxLyyMX2OG2NtbCbHKA_8YcQqe1S"
-)
+const SUPABASE_URL="https://twcgyjhtgxtzaohkzuzg.supabase.co"
+const SUPABASE_KEY="sb_publishable_Vn8zxLyyMX2OG2NtbCbHKA_8YcQqe1S"
 
-let state={
-  tickets:{entry:[],atelier:[]},
-  cart:[]
+let supabase
+let state={tickets:{entry:[],atelier:[]},cart:[]}
+
+async function init(){
+
+  if(!window.supabase){
+    alert("Supabase non chargé")
+    return
+  }
+
+  supabase = window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY)
+
+  await loadTickets()
 }
 
-async function load(){
-  const {data}=await supabase
-    .from("tickets")
-    .select("*")
-    .eq("is_active",true)
-    .order("sort_order")
+async function loadTickets(){
 
-  state.tickets.entry=[]
-  state.tickets.atelier=[]
+  try{
 
-  data.forEach(t=>{
-    if(t.type==="entry") state.tickets.entry.push(t)
-    else state.tickets.atelier.push(t)
-  })
+    const {data,error}=await supabase
+      .from("tickets")
+      .select("*")
+      .eq("is_active",true)
+      .order("sort_order",{ascending:true})
 
-  render()
+    if(error){
+      alert("Erreur Supabase: "+error.message)
+      return
+    }
+
+    state.tickets.entry=[]
+    state.tickets.atelier=[]
+
+    data.forEach(t=>{
+      if(t.type==="entry") state.tickets.entry.push(t)
+      else state.tickets.atelier.push(t)
+    })
+
+    render()
+
+  }catch(e){
+    alert("Erreur JS: "+e.message)
+  }
 }
 
 function render(){
 
+  // ENTRY
   document.getElementById("entryButtons").innerHTML =
     state.tickets.entry.map(t=>
       `<button class="ticket entry" onclick="add('${t.id}','entry')">
@@ -149,12 +151,30 @@ function render(){
       </button>`
     ).join("")
 
+  // ATELIER
   document.getElementById("atelierButtons").innerHTML =
     state.tickets.atelier.map(t=>
       `<button class="ticket atelier" onclick="add('${t.id}','atelier')">
         ${t.name}<br>${t.price}€
       </button>`
     ).join("")
+
+  renderCart()
+}
+
+function add(id,type){
+
+  const t=state.tickets[type].find(x=>x.id===id)
+  if(!t) return
+
+  const f=state.cart.find(x=>x.id===id)
+  if(f) f.qty++
+  else state.cart.push({...t,qty:1})
+
+  renderCart()
+}
+
+function renderCart(){
 
   document.getElementById("cart").innerHTML =
     state.cart.map(i=>`${i.name} x${i.qty}<br>`).join("")
@@ -163,21 +183,13 @@ function render(){
     state.cart.reduce((s,i)=>s+i.price*i.qty,0)+"€"
 }
 
-function add(id,type){
-  const t=state.tickets[type].find(x=>x.id===id)
-  const f=state.cart.find(x=>x.id===id)
-  if(f) f.qty++
-  else state.cart.push({...t,qty:1})
-  render()
-}
-
 function randomCode(){
   return Math.random().toString(36).substring(2,10).toUpperCase()
 }
 
 function buildTicket(item,method){
 
-  return new TextEncoder().encode(
+return new TextEncoder().encode(
 `TICKET
 ${new Date().toLocaleTimeString("fr-FR")}
 
@@ -188,12 +200,13 @@ ${method}
 ${randomCode()}
 
 
-`
-  )
+
+`)
 }
 
 async function connectPrinter(){
-  device = await navigator.usb.requestDevice({filters:[{vendorId:0x04b8}]})
+
+  device=await navigator.usb.requestDevice({filters:[{vendorId:0x04b8}]})
   await device.open()
   await device.selectConfiguration(1)
   await device.claimInterface(0)
@@ -206,18 +219,18 @@ async function send(data){
 async function pay(method){
 
   for(const item of state.cart){
-
     for(let i=0;i<item.qty;i++){
-
       await send(buildTicket(item,method))
     }
   }
 
   state.cart=[]
-  render()
+  renderCart()
 }
 
-load()
+// START SAFE
+window.addEventListener("DOMContentLoaded", init)
+
 </script>
 
 </body>
