@@ -721,16 +721,22 @@ async function resetSales(){
     return;
   }
 
-  if(!confirm("Voulez-vous vraiment supprimer toutes les ventes et remettre les statistiques à zéro ?"))return;
+  if(!confirm("Voulez-vous vraiment supprimer toutes les ventes et remettre les statistiques à zéro ?")) return;
 
-  const itemRes=await sb.from("sale_items").delete().neq("id","00000000-0000-0000-0000-000000000000");
+  const itemRes=await sb
+    .from("sale_items")
+    .delete()
+    .not("id","is",null);
 
   if(itemRes.error){
     alert("Erreur reset détails: "+itemRes.error.message);
     return;
   }
 
-  const saleRes=await sb.from("sales").delete().neq("id","");
+  const saleRes=await sb
+    .from("sales")
+    .delete()
+    .not("id","is",null);
 
   if(saleRes.error){
     alert("Erreur reset ventes: "+saleRes.error.message);
