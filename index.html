@@ -32,12 +32,16 @@ button{border:0;border-radius:16px;padding:18px;font-size:20px;font-weight:700;c
 .cb{background:#f59e0b}
 .clear{width:100%;background:white;border:1px solid #ddd;margin-top:10px}
 .admin-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;align-items:center;justify-content:center}
-.admin{background:white;width:900px;max-height:90vh;overflow:auto;border-radius:24px;padding:24px}
+.admin{background:white;width:980px;max-height:90vh;overflow:auto;border-radius:24px;padding:24px}
 .admin input,.admin select{width:100%;padding:14px;margin:6px 0;border:1px solid #ddd;border-radius:12px;font-size:18px}
 .admin-row{display:grid;grid-template-columns:1fr 90px 100px;gap:8px;margin-bottom:8px}
 .admin-btn{width:100%;margin-top:8px;color:white;background:#111827}
 .green{background:#16a34a}
 .red{background:#ef4444}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
+.stat{background:#f8fafc;border-radius:16px;padding:14px}
+.stat b{font-size:28px}
+.sale-row{background:#f8fafc;border-radius:14px;padding:12px;margin-bottom:8px}
 </style>
 </head>
 
@@ -87,7 +91,17 @@ button{border:0;border-radius:16px;padding:18px;font-size:20px;font-weight:700;c
   <div class="admin">
     <button class="clear" onclick="closeAdmin()">Fermer</button>
 
-    <h2>Admin</h2>
+    <h2>Statistiques ventes</h2>
+    <div class="stats">
+      <div class="stat">Ventes<br><b id="statSales">0</b></div>
+      <div class="stat">Tickets<br><b id="statTickets">0</b></div>
+      <div class="stat">CA total<br><b id="statCA">0€</b></div>
+      <div class="stat">CA ESP<br><b id="statESP">0€</b></div>
+      <div class="stat">CA CB<br><b id="statCB">0€</b></div>
+    </div>
+
+    <h3>Dernières ventes</h3>
+    <div id="salesHistory"></div>
 
     <h3>Événement</h3>
     <input id="adminName" placeholder="Nom événement">
@@ -124,22 +138,9 @@ let holdTimer=null;
 
 let state={
   event:{name:"Japan Manga Wave",date:"2026-04-25",location:"Caen Parc Expo"},
-  tickets:{
-    entry:[
-      {id:"e1",name:"Pass journée",price:14,type:"Entree"},
-      {id:"e2",name:"Pass week-end",price:22,type:"Entree"}
-    ],
-    atelier:[
-      {id:"a1",name:"Atelier Sushi",price:15,type:"Atelier"},
-      {id:"a2",name:"Atelier Onigiri",price:15,type:"Atelier"},
-      {id:"a3",name:"Atelier Terrarium",price:7,type:"Atelier"},
-      {id:"a4",name:"Atelier Gyoza",price:15,type:"Atelier"},
-      {id:"a5",name:"Atelier Origami",price:14,type:"Atelier"},
-      {id:"a6",name:"Atelier Pokeball",price:6,type:"Atelier"},
-      {id:"a7",name:"Pass Gaming",price:5,type:"Atelier"}
-    ]
-  },
-  cart:[]
+  tickets:{entry:[],atelier:[]},
+  cart:[],
+  sales:[]
 };
 
 function setStatus(msg){
@@ -174,14 +175,16 @@ function render(){
   `).join("") || "Aucun billet";
 
   document.getElementById("total").textContent=total()+"€";
+
   renderAdminTickets();
+  renderStats();
+  renderSalesHistory();
 }
 
 async function loadSupabase(){
   try{
     if(!window.supabase){
-      setStatus("Supabase non chargé · mode local");
-      render();
+      setStatus("Supabase non chargé");
       return;
     }
 
@@ -203,30 +206,74 @@ async function loadSupabase(){
       .order("type",{ascending:true})
       .order("sort_order",{ascending:true});
 
-    if(res.error){
-      setStatus("Erreur Supabase: "+res.error.message+" · mode local");
-      render();
-      return;
-    }
-
     if(res.data && res.data.length>0){
-      state.tickets.entry=res.data
-        .filter(t=>t.type==="entry")
-        .map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Entree"}));
-
-      state.tickets.atelier=res.data
-        .filter(t=>t.type==="atelier")
-        .map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Atelier"}));
-
-      setStatus("Supabase OK · "+res.data.length+" billets chargés");
+      state.tickets.entry=res.data.filter(t=>t.type==="entry").map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Entree"}));
+      state.tickets.atelier=res.data.filter(t=>t.type==="atelier").map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Atelier"}));
     }
 
+    await loadSales();
+
+    setStatus("Supabase OK · "+(res.data||[]).length+" billets chargés");
     render();
 
   }catch(e){
-    setStatus("Erreur JS: "+e.message+" · mode local");
+    setStatus("Erreur JS: "+e.message);
     render();
   }
+}
+
+async function loadSales(){
+  if(!sb)return;
+
+  const res=await sb
+    .from("sales")
+    .select("*, sale_items(*)")
+    .order("created_at",{ascending:false})
+    .limit(100);
+
+  if(res.error)return;
+
+  state.sales=(res.data||[]).map(s=>({
+    id:s.id,
+    method:s.payment_method,
+    total:Number(s.total),
+    createdAt:s.created_at,
+    items:(s.sale_items||[]).map(i=>({
+      name:i.ticket_name,
+      type:i.ticket_type,
+      price:Number(i.price),
+      qty:Number(i.quantity)
+    }))
+  }));
+}
+
+function renderStats(){
+  let salesCount=state.sales.length;
+  let tickets=0, ca=0, esp=0, cb=0;
+
+  state.sales.forEach(s=>{
+    ca+=s.total;
+    if(s.method==="ESP")esp+=s.total;
+    if(s.method==="CB")cb+=s.total;
+    s.items.forEach(i=>tickets+=i.qty);
+  });
+
+  document.getElementById("statSales").textContent=salesCount;
+  document.getElementById("statTickets").textContent=tickets;
+  document.getElementById("statCA").textContent=ca+"€";
+  document.getElementById("statESP").textContent=esp+"€";
+  document.getElementById("statCB").textContent=cb+"€";
+}
+
+function renderSalesHistory(){
+  document.getElementById("salesHistory").innerHTML=state.sales.slice(0,10).map(s=>`
+    <div class="sale-row">
+      <b>${s.id}</b><br>
+      ${new Date(s.createdAt).toLocaleString("fr-FR")}<br>
+      Paiement: ${s.method} · Total: ${s.total}€<br>
+      ${s.items.map(i=>`${i.name} x${i.qty}`).join(", ")}
+    </div>
+  `).join("") || "Aucune vente enregistrée";
 }
 
 function add(id,kind){
@@ -354,6 +401,8 @@ async function pay(method){
   }
 
   const sale=saleId();
+  const items=JSON.parse(JSON.stringify(state.cart));
+  const saleTotal=total();
 
   for(const item of state.cart){
     for(let i=0;i<item.qty;i++){
@@ -363,9 +412,42 @@ async function pay(method){
     }
   }
 
+  await saveSale(sale,method,saleTotal,items);
+
   state.cart=[];
+  await loadSales();
   render();
   alert("Vente imprimée");
+}
+
+async function saveSale(sale,method,saleTotal,items){
+  if(!sb)return;
+
+  const saleRes=await sb.from("sales").insert({
+    id:sale,
+    payment_method:method,
+    total:saleTotal
+  });
+
+  if(saleRes.error){
+    alert("Vente imprimée mais non sauvegardée: "+saleRes.error.message);
+    return;
+  }
+
+  const rows=items.map(i=>({
+    sale_id:sale,
+    ticket_id:i.id,
+    ticket_name:i.name,
+    ticket_type:i.type,
+    price:i.price,
+    quantity:i.qty
+  }));
+
+  const itemRes=await sb.from("sale_items").insert(rows);
+
+  if(itemRes.error){
+    alert("Erreur détails vente: "+itemRes.error.message);
+  }
 }
 
 function openAdmin(){
@@ -377,6 +459,8 @@ function openAdmin(){
   document.getElementById("adminLocation").value=state.event.location;
 
   renderAdminTickets();
+  renderStats();
+  renderSalesHistory();
   document.getElementById("adminBox").style.display="flex";
 }
 
