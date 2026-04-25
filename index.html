@@ -187,9 +187,7 @@ let state={
   sales:[]
 };
 
-function setStatus(msg){
-  document.getElementById("status").textContent=msg;
-}
+function setStatus(msg){document.getElementById("status").textContent=msg;}
 
 function toast(msg){
   const t=document.getElementById("toast");
@@ -222,11 +220,7 @@ async function loadSupabase(){
 
     const ev=await sb.from("event_settings").select("*").eq("id","main").single();
     if(!ev.error && ev.data){
-      state.event={
-        name:ev.data.name,
-        date:ev.data.event_date,
-        location:ev.data.location
-      };
+      state.event={name:ev.data.name,date:ev.data.event_date,location:ev.data.location};
     }
 
     const res=await sb
@@ -243,17 +237,11 @@ async function loadSupabase(){
     }
 
     if(res.data && res.data.length>0){
-      state.tickets.entry=res.data
-        .filter(t=>t.type==="entry")
-        .map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Entree"}));
-
-      state.tickets.atelier=res.data
-        .filter(t=>t.type==="atelier")
-        .map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Atelier"}));
+      state.tickets.entry=res.data.filter(t=>t.type==="entry").map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Entree"}));
+      state.tickets.atelier=res.data.filter(t=>t.type==="atelier").map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Atelier"}));
     }
 
     await loadSales();
-
     setStatus("Supabase OK · "+(res.data||[]).length+" billets chargés");
     render();
 
@@ -323,7 +311,6 @@ function render(){
   `).join("") || "Aucun billet";
 
   document.getElementById("total").textContent=total()+"€";
-
   renderAdminTickets();
   renderStats();
   renderSalesHistory();
@@ -339,22 +326,16 @@ function setMode(mode){
 function handleTicket(id,kind){
   const t=state.tickets[kind].find(x=>x.id===id);
   if(!t)return;
-
-  if(state.mode==="rapide"){
-    printSingle(t,"ESP");
-  }else{
-    add(id,kind);
-  }
+  if(state.mode==="rapide") printSingle(t,"ESP");
+  else add(id,kind);
 }
 
 function add(id,kind){
   const t=state.tickets[kind].find(x=>x.id===id);
   if(!t)return;
-
   const f=state.cart.find(x=>x.id===id);
   if(f)f.qty++;
   else state.cart.push({...t,qty:1});
-
   render();
 }
 
@@ -364,14 +345,8 @@ function changeQty(index,delta){
   render();
 }
 
-function clearCart(){
-  state.cart=[];
-  render();
-}
-
-function total(){
-  return state.cart.reduce((s,i)=>s+i.price*i.qty,0);
-}
+function clearCart(){state.cart=[];render();}
+function total(){return state.cart.reduce((s,i)=>s+i.price*i.qty,0);}
 
 function clean(v){
   return String(v).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/€/g," EUR").replace(/[^\x20-\x7E\n]/g,"");
@@ -399,11 +374,7 @@ async function connectPrinter(){
     for(const i of device.configuration.interfaces){
       for(const alt of i.alternates){
         const ep=alt.endpoints.find(e=>e.direction==="out");
-        if(ep){
-          iface=i.interfaceNumber;
-          endpoint=ep.endpointNumber;
-          break;
-        }
+        if(ep){iface=i.interfaceNumber;endpoint=ep.endpointNumber;break;}
       }
       if(endpoint)break;
     }
@@ -421,9 +392,7 @@ function saleId(){
   return "V"+String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+"-"+Math.floor(1000+Math.random()*9000);
 }
 
-function codeTicket(prefix){
-  return prefix+"-"+Math.random().toString(36).substring(2,10).toUpperCase();
-}
+function codeTicket(prefix){return prefix+"-"+Math.random().toString(36).substring(2,10).toUpperCase();}
 
 function ticketData(item,method,sale,code){
   return concat([
@@ -475,7 +444,6 @@ async function printOne(item,method,sale){
 async function printSingle(item,method){
   if(printing)return;
   setLoading(true);
-
   const sale=saleId();
   const ok=await printOne(item,method,sale);
 
@@ -491,14 +459,12 @@ async function printSingle(item,method){
 
 async function pay(method){
   if(printing)return;
-
   if(state.cart.length===0){
     alert("Panier vide");
     return;
   }
 
   setLoading(true);
-
   const sale=saleId();
   const items=JSON.parse(JSON.stringify(state.cart));
   const saleTotal=total();
@@ -515,12 +481,10 @@ async function pay(method){
   }
 
   await saveSale(sale,method,saleTotal,items);
-
   state.cart=[];
   await loadSales();
   render();
   toast("Vente imprimée");
-
   setLoading(false);
 }
 
@@ -597,9 +561,7 @@ function openAdmin(){
   document.getElementById("adminBox").style.display="flex";
 }
 
-function closeAdmin(){
-  document.getElementById("adminBox").style.display="none";
-}
+function closeAdmin(){document.getElementById("adminBox").style.display="none";}
 
 async function saveEvent(){
   if(!sb){
@@ -723,23 +685,10 @@ async function resetSales(){
 
   if(!confirm("Voulez-vous vraiment supprimer toutes les ventes et remettre les statistiques à zéro ?")) return;
 
-  const itemRes=await sb
-    .from("sale_items")
-    .delete()
-    .not("id","is",null);
+  const res=await sb.rpc("reset_sales");
 
-  if(itemRes.error){
-    alert("Erreur reset détails: "+itemRes.error.message);
-    return;
-  }
-
-  const saleRes=await sb
-    .from("sales")
-    .delete()
-    .not("id","is",null);
-
-  if(saleRes.error){
-    alert("Erreur reset ventes: "+saleRes.error.message);
+  if(res.error){
+    alert("Erreur reset: "+res.error.message);
     return;
   }
 
