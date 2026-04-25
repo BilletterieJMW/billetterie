@@ -2,223 +2,755 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Billetterie PRO</title>
+<title>Billetterie JMW PRO MAX</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
-body{margin:0;font-family:Arial;background:#eef2f7}
-.app{padding:12px}
-.header{background:#0f172a;color:#fff;border-radius:18px;padding:18px}
-h1{margin:0;font-size:36px}
-.top{display:flex;gap:10px;margin-top:10px}
-button{border:none;border-radius:12px;padding:14px;font-weight:700;cursor:pointer}
-.primary{background:#111827;color:white}
-.green{background:#16a34a;color:white}
-.orange{background:#f59e0b;color:white}
-.red{background:#ef4444;color:white}
-
-.layout{display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-top:12px}
-
-.section{background:white;border-radius:18px;padding:16px;margin-bottom:10px}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
-.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-
-.ticket{padding:26px;border-radius:16px;color:white;font-size:20px}
-.entry{background:#2563eb}
+html,body{margin:0;height:100%;font-family:Arial;background:#eef2f7;overflow:hidden}
+*{box-sizing:border-box}
+.app{height:100vh;padding:14px;display:flex;flex-direction:column;gap:12px}
+.header{background:#0f172a;color:white;border-radius:22px;padding:22px}
+.header h1{font-size:42px;margin:0}
+.header p{font-size:21px;margin:10px 0 0;opacity:.85}
+.top{display:flex;gap:10px}
+button{border:0;border-radius:16px;padding:16px;font-size:18px;font-weight:700;cursor:pointer}
+.connect,.mode{background:#111827;color:white}
+.mode.active{background:#2563eb}
+.status{background:white;border-radius:16px;padding:16px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.layout{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,2fr)430px;gap:14px}
+.left{overflow:auto;min-height:0}
+.section{background:white;border-radius:22px;padding:20px;margin-bottom:14px}
+.entry-grid{display:grid;grid-template-columns:repeat(2,minmax(320px,430px));justify-content:center;gap:24px}
+.atelier-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.ticket{color:white;min-height:120px;font-size:22px}
+.entry{background:#2563eb;font-size:30px;min-height:145px}
 .atelier{background:#7c3aed}
-
-.side{background:white;border-radius:18px;padding:16px}
-.total{font-size:40px;font-weight:700}
-.cart-item{border-bottom:1px solid #ddd;padding:6px 0}
-
-.admin{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center}
-.admin-box{background:white;padding:20px;border-radius:16px;width:800px;max-height:90vh;overflow:auto}
-
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-.stat{background:#f1f5f9;padding:12px;border-radius:10px}
+.side{background:white;border-radius:22px;padding:18px;display:flex;flex-direction:column;min-height:0}
+.cart-scroll{flex:1;overflow:auto;min-height:0}
+.cart-item{border:1px solid #ddd;border-radius:14px;padding:12px;margin-bottom:10px}
+.cart-line{display:flex;justify-content:space-between;font-weight:700}
+.qty{display:flex;gap:10px;margin-top:8px;align-items:center}
+.qty button{width:42px;height:42px;padding:0;background:#e5e7eb}
+.checkout{border-top:1px solid #e5e7eb;padding-top:12px}
+.total{background:#0f172a;color:white;border-radius:18px;padding:18px;margin:10px 0}
+.total b{font-size:50px}
+.pay{width:100%;color:white;font-size:28px;margin-top:10px}
+.pay:disabled,.ticket:disabled{opacity:.45}
+.esp{background:#16a34a}
+.cb{background:#f59e0b}
+.clear{width:100%;background:white;border:1px solid #ddd;margin-top:10px}
+.admin-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999;align-items:center;justify-content:center}
+.admin{background:white;width:980px;max-height:90vh;overflow:auto;border-radius:24px;padding:24px}
+.admin input,.admin select{width:100%;padding:14px;margin:6px 0;border:1px solid #ddd;border-radius:12px;font-size:18px}
+.admin-row{display:grid;grid-template-columns:1fr 90px 100px;gap:8px;margin-bottom:8px}
+.admin-btn{width:100%;margin-top:8px;color:white;background:#111827}
+.green{background:#16a34a}
+.red{background:#ef4444}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
+.stat{background:#f8fafc;border-radius:16px;padding:14px}
+.stat b{font-size:28px}
+.sale-row{background:#f8fafc;border-radius:14px;padding:12px;margin-bottom:8px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111827;color:white;padding:15px 24px;border-radius:16px;font-size:20px;font-weight:700;display:none;z-index:1500}
+.loading{position:fixed;inset:0;background:rgba(255,255,255,.55);display:none;align-items:center;justify-content:center;z-index:1400}
+.loading div{background:white;border-radius:20px;padding:24px 34px;font-size:24px;font-weight:700}
+@media(max-width:900px){
+  html,body{overflow:auto;height:auto}
+  .app{height:auto}
+  .layout{grid-template-columns:1fr}
+  .entry-grid,.atelier-grid{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,1fr)}
+}
 </style>
 </head>
 
 <body>
 <div class="app">
+  <div class="header" id="adminHold">
+    <small>Appuyez longuement ici pour admin</small>
+    <h1 id="eventName">Japan Manga Wave</h1>
+    <p><span id="eventDate">2026-04-25</span> — <span id="eventLocation">Caen Parc Expo</span></p>
+  </div>
 
-<div class="header" id="header">
-<h1 id="eventName">Japan Manga Wave</h1>
-<div id="eventDate">2026-04-25</div>
+  <div class="top">
+    <button class="connect" onclick="connectPrinter()">Connecter imprimante USB</button>
+    <button class="mode active" id="modePanier" onclick="setMode('panier')">Mode panier</button>
+    <button class="mode" id="modeRapide" onclick="setMode('rapide')">Mode rapide ESP</button>
+    <div class="status" id="status">Initialisation...</div>
+  </div>
+
+  <div class="layout">
+    <div class="left">
+      <div class="section">
+        <h2>Ticket entrée</h2>
+        <div class="entry-grid" id="entryButtons"></div>
+      </div>
+
+      <div class="section">
+        <h2>Ticket atelier</h2>
+        <div class="atelier-grid" id="atelierButtons"></div>
+      </div>
+    </div>
+
+    <div class="side">
+      <h2>Panier</h2>
+      <div class="cart-scroll" id="cart"></div>
+
+      <div class="checkout">
+        <div class="total">
+          <div>Total</div>
+          <b id="total">0€</b>
+        </div>
+
+        <button class="pay esp" onclick="pay('ESP')">ESP</button>
+        <button class="pay cb" onclick="pay('CB')">CB</button>
+        <button class="clear" onclick="clearCart()">Vider panier</button>
+      </div>
+    </div>
+  </div>
 </div>
 
-<div class="top">
-<button class="primary" onclick="connectPrinter()">USB</button>
-<button onclick="setMode('panier')">Panier</button>
-<button onclick="setMode('rapide')">Rapide ESP</button>
+<div id="adminBox" class="admin-overlay">
+  <div class="admin">
+    <button class="clear" onclick="closeAdmin()">Fermer</button>
+
+    <h2>Statistiques ventes</h2>
+    <div class="stats">
+      <div class="stat">Ventes<br><b id="statSales">0</b></div>
+      <div class="stat">Tickets<br><b id="statTickets">0</b></div>
+      <div class="stat">CA total<br><b id="statCA">0€</b></div>
+      <div class="stat">CA ESP<br><b id="statESP">0€</b></div>
+      <div class="stat">CA CB<br><b id="statCB">0€</b></div>
+    </div>
+
+    <button class="admin-btn red" onclick="resetSales()">Reset statistiques / ventes</button>
+
+    <h3>Dernières ventes</h3>
+    <div id="salesHistory"></div>
+
+    <h3>Événement</h3>
+    <input id="adminName" placeholder="Nom événement">
+    <input id="adminDate" placeholder="Date">
+    <input id="adminLocation" placeholder="Lieu">
+    <button class="admin-btn green" onclick="saveEvent()">Sauvegarder événement</button>
+
+    <h3>Créer billet</h3>
+    <input id="newTicketName" placeholder="Nom billet">
+    <input id="newTicketPrice" placeholder="Prix">
+    <select id="newTicketType">
+      <option value="entry">Entrée</option>
+      <option value="atelier">Atelier</option>
+    </select>
+    <button class="admin-btn green" onclick="createTicket()">Ajouter billet</button>
+
+    <h3>Billets entrée</h3>
+    <div id="adminEntry"></div>
+
+    <h3>Billets atelier</h3>
+    <div id="adminAtelier"></div>
+  </div>
 </div>
 
-<div class="layout">
-
-<div>
-
-<div class="section">
-<h3>Entrée</h3>
-<div class="grid" id="entry"></div>
-</div>
-
-<div class="section">
-<h3>Atelier</h3>
-<div class="grid-3" id="atelier"></div>
-</div>
-
-</div>
-
-<div class="side">
-<h3>Panier</h3>
-<div id="cart"></div>
-
-<div class="total" id="total">0€</div>
-
-<button class="green" onclick="pay('ESP')">ESP</button>
-<button class="orange" onclick="pay('CB')">CB</button>
-<button onclick="clearCart()">Vider</button>
-</div>
-
-</div>
-</div>
-
-<!-- ADMIN -->
-<div class="admin" id="adminBox">
-<div class="admin-box">
-
-<button onclick="closeAdmin()">Fermer</button>
-
-<h3>Stats</h3>
-<div class="stats">
-<div class="stat">Ventes<br><b id="sSales">0</b></div>
-<div class="stat">Tickets<br><b id="sTickets">0</b></div>
-<div class="stat">CA<br><b id="sCA">0€</b></div>
-<div class="stat">ESP<br><b id="sESP">0€</b></div>
-</div>
-
-<button class="red" onclick="resetSales()">RESET</button>
-
-<h3>Tickets</h3>
-<div id="adminTickets"></div>
-
-</div>
-</div>
+<div class="loading" id="loading"><div>Impression en cours...</div></div>
+<div class="toast" id="toast">OK</div>
 
 <script>
-const URL="https://twcgyjhtgxtzaohkzuzg.supabase.co";
-const KEY="sb_publishable_Vn8zxLyyMX2OG2NtbCbHKA_8YcQqe1S";
+const SUPABASE_URL="https://twcgyjhtgxtzaohkzuzg.supabase.co";
+const SUPABASE_KEY="sb_publishable_Vn8zxLyyMX2OG2NtbCbHKA_8YcQqe1S";
+const ADMIN_CODE="2026";
 
-const sb = window.supabase.createClient(URL,KEY);
+let sb=null;
+let device=null;
+let endpoint=null;
+let holdTimer=null;
+let printing=false;
 
-let state={tickets:[],cart:[],sales:[],mode:"panier"};
+let state={
+  mode:localStorage.getItem("jmw_mode") || "panier",
+  event:{name:"Japan Manga Wave",date:"2026-04-25",location:"Caen Parc Expo"},
+  tickets:{
+    entry:[
+      {id:"e1",name:"Pass journée",price:14,type:"Entree"},
+      {id:"e2",name:"Pass week-end",price:22,type:"Entree"}
+    ],
+    atelier:[
+      {id:"a1",name:"Atelier Sushi",price:15,type:"Atelier"},
+      {id:"a2",name:"Atelier Onigiri",price:15,type:"Atelier"},
+      {id:"a3",name:"Atelier Terrarium",price:7,type:"Atelier"},
+      {id:"a4",name:"Atelier Gyoza",price:15,type:"Atelier"},
+      {id:"a5",name:"Atelier Origami",price:14,type:"Atelier"},
+      {id:"a6",name:"Atelier Pokeball",price:6,type:"Atelier"},
+      {id:"a7",name:"Pass Gaming",price:5,type:"Atelier"}
+    ]
+  },
+  cart:[],
+  sales:[]
+};
 
-async function load(){
-const {data:tickets}=await sb.from("tickets").select("*").eq("is_active",true);
-state.tickets=tickets||[];
+function setStatus(msg){
+  document.getElementById("status").textContent=msg;
+}
 
-const {data:sales}=await sb.from("sales").select("*");
-state.sales=sales||[];
+function toast(msg){
+  const t=document.getElementById("toast");
+  t.textContent=msg;
+  t.style.display="block";
+  setTimeout(()=>t.style.display="none",1300);
+}
 
-render();
+function setLoading(v){
+  printing=v;
+  document.getElementById("loading").style.display=v?"flex":"none";
+  document.querySelectorAll(".ticket,.pay").forEach(b=>b.disabled=v);
+}
+
+function initSupabase(){
+  if(!window.supabase){
+    setStatus("Supabase non chargé · mode local");
+    return false;
+  }
+  sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+  return true;
+}
+
+async function loadSupabase(){
+  try{
+    if(!sb && !initSupabase()){
+      render();
+      return;
+    }
+
+    const ev=await sb.from("event_settings").select("*").eq("id","main").single();
+    if(!ev.error && ev.data){
+      state.event={
+        name:ev.data.name,
+        date:ev.data.event_date,
+        location:ev.data.location
+      };
+    }
+
+    const res=await sb
+      .from("tickets")
+      .select("*")
+      .eq("is_active",true)
+      .order("type",{ascending:true})
+      .order("sort_order",{ascending:true});
+
+    if(res.error){
+      setStatus("Erreur Supabase: "+res.error.message+" · mode local");
+      render();
+      return;
+    }
+
+    if(res.data && res.data.length>0){
+      state.tickets.entry=res.data
+        .filter(t=>t.type==="entry")
+        .map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Entree"}));
+
+      state.tickets.atelier=res.data
+        .filter(t=>t.type==="atelier")
+        .map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Atelier"}));
+    }
+
+    await loadSales();
+
+    setStatus("Supabase OK · "+(res.data||[]).length+" billets chargés");
+    render();
+
+  }catch(e){
+    setStatus("Erreur JS: "+e.message+" · mode local");
+    render();
+  }
+}
+
+async function loadSales(){
+  if(!sb)return;
+
+  const res=await sb
+    .from("sales")
+    .select("*, sale_items(*)")
+    .order("created_at",{ascending:false})
+    .limit(150);
+
+  if(res.error)return;
+
+  state.sales=(res.data||[]).map(s=>({
+    id:s.id,
+    method:s.payment_method,
+    total:Number(s.total),
+    createdAt:s.created_at,
+    items:(s.sale_items||[]).map(i=>({
+      name:i.ticket_name,
+      type:i.ticket_type,
+      price:Number(i.price),
+      qty:Number(i.quantity)
+    }))
+  }));
 }
 
 function render(){
-document.getElementById("entry").innerHTML=
-state.tickets.filter(t=>t.type==="entry")
-.map(t=>`<button class="ticket entry" onclick="add('${t.id}')">${t.name}<br>${t.price}€</button>`).join("");
+  document.getElementById("eventName").textContent=state.event.name;
+  document.getElementById("eventDate").textContent=state.event.date;
+  document.getElementById("eventLocation").textContent=state.event.location;
 
-document.getElementById("atelier").innerHTML=
-state.tickets.filter(t=>t.type==="atelier")
-.map(t=>`<button class="ticket atelier" onclick="add('${t.id}')">${t.name}<br>${t.price}€</button>`).join("");
+  document.getElementById("modePanier").classList.toggle("active",state.mode==="panier");
+  document.getElementById("modeRapide").classList.toggle("active",state.mode==="rapide");
 
-document.getElementById("cart").innerHTML=
-state.cart.map(c=>`<div class="cart-item">${c.name} x${c.qty}</div>`).join("");
+  document.getElementById("entryButtons").innerHTML=state.tickets.entry.map(t=>`
+    <button class="ticket entry" onclick="handleTicket('${t.id}','entry')">
+      ${t.name}<br>${t.price}€
+    </button>
+  `).join("");
 
-document.getElementById("total").innerText=total()+"€";
+  document.getElementById("atelierButtons").innerHTML=state.tickets.atelier.map(t=>`
+    <button class="ticket atelier" onclick="handleTicket('${t.id}','atelier')">
+      ${t.name}<br>${t.price}€
+    </button>
+  `).join("");
 
-renderStats();
+  document.getElementById("cart").innerHTML=state.cart.map((i,index)=>`
+    <div class="cart-item">
+      <div class="cart-line">
+        <span>${i.name} x${i.qty}</span>
+        <span>${i.price*i.qty}€</span>
+      </div>
+      <div class="qty">
+        <button onclick="changeQty(${index},-1)">-</button>
+        <b>${i.qty}</b>
+        <button onclick="changeQty(${index},1)">+</button>
+      </div>
+    </div>
+  `).join("") || "Aucun billet";
+
+  document.getElementById("total").textContent=total()+"€";
+
+  renderAdminTickets();
+  renderStats();
+  renderSalesHistory();
 }
 
-function add(id){
-const t=state.tickets.find(x=>x.id===id);
-let f=state.cart.find(x=>x.id===id);
-if(f)f.qty++; else state.cart.push({...t,qty:1});
-render();
+function setMode(mode){
+  state.mode=mode;
+  localStorage.setItem("jmw_mode",mode);
+  render();
+  toast(mode==="rapide" ? "Mode rapide ESP" : "Mode panier");
 }
 
-function total(){
-return state.cart.reduce((s,i)=>s+i.price*i.qty,0);
+function handleTicket(id,kind){
+  const t=state.tickets[kind].find(x=>x.id===id);
+  if(!t)return;
+
+  if(state.mode==="rapide"){
+    printSingle(t,"ESP");
+  }else{
+    add(id,kind);
+  }
+}
+
+function add(id,kind){
+  const t=state.tickets[kind].find(x=>x.id===id);
+  if(!t)return;
+
+  const f=state.cart.find(x=>x.id===id);
+  if(f)f.qty++;
+  else state.cart.push({...t,qty:1});
+
+  render();
+}
+
+function changeQty(index,delta){
+  state.cart[index].qty+=delta;
+  if(state.cart[index].qty<=0)state.cart.splice(index,1);
+  render();
 }
 
 function clearCart(){
-state.cart=[];
-render();
+  state.cart=[];
+  render();
+}
+
+function total(){
+  return state.cart.reduce((s,i)=>s+i.price*i.qty,0);
+}
+
+function clean(v){
+  return String(v).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/€/g," EUR").replace(/[^\x20-\x7E\n]/g,"");
+}
+
+function txt(v){return new TextEncoder().encode(clean(v))}
+function cmd(...b){return new Uint8Array(b)}
+function concat(arrays){
+  let total=arrays.reduce((s,a)=>s+a.length,0);
+  let out=new Uint8Array(total);
+  let offset=0;
+  arrays.forEach(a=>{out.set(a,offset);offset+=a.length});
+  return out;
+}
+
+async function connectPrinter(){
+  try{
+    device=await navigator.usb.requestDevice({filters:[{vendorId:0x04b8}]});
+    await device.open();
+    if(!device.configuration)await device.selectConfiguration(1);
+
+    endpoint=null;
+    let iface=null;
+
+    for(const i of device.configuration.interfaces){
+      for(const alt of i.alternates){
+        const ep=alt.endpoints.find(e=>e.direction==="out");
+        if(ep){
+          iface=i.interfaceNumber;
+          endpoint=ep.endpointNumber;
+          break;
+        }
+      }
+      if(endpoint)break;
+    }
+
+    await device.claimInterface(iface);
+    setStatus("Imprimante connectée: "+device.productName);
+    toast("Imprimante connectée");
+  }catch(e){
+    setStatus("Erreur imprimante: "+e.message);
+  }
+}
+
+function saleId(){
+  const d=new Date();
+  return "V"+String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+"-"+Math.floor(1000+Math.random()*9000);
+}
+
+function codeTicket(prefix){
+  return prefix+"-"+Math.random().toString(36).substring(2,10).toUpperCase();
+}
+
+function ticketData(item,method,sale,code){
+  return concat([
+    cmd(0x1B,0x40),
+    cmd(0x1B,0x61,0x01),
+    cmd(0x1B,0x45,0x01),
+    cmd(0x1D,0x21,0x11),
+    txt("TICKET\n"),
+    cmd(0x1D,0x21,0x00),
+    cmd(0x1B,0x45,0x00),
+    txt(state.event.name+"\n"),
+    txt(state.event.date+"\n"),
+    txt(state.event.location+"\n"),
+    txt("Heure: "+new Date().toLocaleTimeString("fr-FR")+"\n"),
+    txt("------------------------------\n"),
+    txt(item.name+"\n"),
+    txt("Type: "+item.type+"\n"),
+    txt("Prix: "+item.price+" EUR\n"),
+    txt("Paiement: "+method+"\n"),
+    txt("Vente: "+sale+"\n"),
+    txt("Code: "+code+"\n"),
+    txt("------------------------------\n"),
+    cmd(0x1D,0x21,0x11),
+    txt(code+"\n"),
+    cmd(0x1D,0x21,0x00),
+    txt("1 billet = 1 ticket\n"),
+    txt("\n\n\n\n"),
+    cmd(0x1D,0x56,0x42,0x00)
+  ]);
+}
+
+async function printOne(item,method,sale){
+  if(!device){
+    alert("Connectez d'abord l'imprimante USB");
+    return false;
+  }
+
+  const code=codeTicket(item.type==="Entree"?"ENT":"ATL");
+
+  try{
+    await device.transferOut(endpoint,ticketData(item,method,sale,code));
+    return true;
+  }catch(e){
+    alert("Erreur impression: "+e.message);
+    return false;
+  }
+}
+
+async function printSingle(item,method){
+  if(printing)return;
+  setLoading(true);
+
+  const sale=saleId();
+  const ok=await printOne(item,method,sale);
+
+  if(ok){
+    await saveSale(sale,method,item.price,[{...item,qty:1}]);
+    await loadSales();
+    render();
+    toast("Ticket imprimé");
+  }
+
+  setLoading(false);
 }
 
 async function pay(method){
-if(state.cart.length===0)return;
+  if(printing)return;
 
-const saleId="V"+Date.now();
+  if(state.cart.length===0){
+    alert("Panier vide");
+    return;
+  }
 
-await sb.from("sales").insert({
-id:saleId,
-payment_method:method,
-total:total()
-});
+  setLoading(true);
 
-state.cart=[];
-load();
+  const sale=saleId();
+  const items=JSON.parse(JSON.stringify(state.cart));
+  const saleTotal=total();
+
+  for(const item of state.cart){
+    for(let i=0;i<item.qty;i++){
+      const ok=await printOne(item,method,sale);
+      if(!ok){
+        setLoading(false);
+        return;
+      }
+      await new Promise(r=>setTimeout(r,150));
+    }
+  }
+
+  await saveSale(sale,method,saleTotal,items);
+
+  state.cart=[];
+  await loadSales();
+  render();
+  toast("Vente imprimée");
+
+  setLoading(false);
+}
+
+async function saveSale(sale,method,saleTotal,items){
+  if(!sb)return;
+
+  const saleRes=await sb.from("sales").insert({
+    id:sale,
+    payment_method:method,
+    total:saleTotal
+  });
+
+  if(saleRes.error){
+    alert("Vente imprimée mais non sauvegardée: "+saleRes.error.message);
+    return;
+  }
+
+  const rows=items.map(i=>({
+    sale_id:sale,
+    ticket_id:String(i.id).length>20?i.id:null,
+    ticket_name:i.name,
+    ticket_type:i.type,
+    price:i.price,
+    quantity:i.qty
+  }));
+
+  const itemRes=await sb.from("sale_items").insert(rows);
+
+  if(itemRes.error){
+    alert("Erreur détails vente: "+itemRes.error.message);
+  }
 }
 
 function renderStats(){
-let ca=0,esp=0,tickets=0;
+  let salesCount=state.sales.length;
+  let tickets=0, ca=0, esp=0, cb=0;
 
-state.sales.forEach(s=>{
-ca+=s.total;
-if(s.payment_method==="ESP")esp+=s.total;
-});
+  state.sales.forEach(s=>{
+    ca+=s.total;
+    if(s.method==="ESP")esp+=s.total;
+    if(s.method==="CB")cb+=s.total;
+    s.items.forEach(i=>tickets+=i.qty);
+  });
 
-document.getElementById("sSales").innerText=state.sales.length;
-document.getElementById("sCA").innerText=ca+"€";
-document.getElementById("sESP").innerText=esp+"€";
+  document.getElementById("statSales").textContent=salesCount;
+  document.getElementById("statTickets").textContent=tickets;
+  document.getElementById("statCA").textContent=ca+"€";
+  document.getElementById("statESP").textContent=esp+"€";
+  document.getElementById("statCB").textContent=cb+"€";
 }
 
-async function resetSales(){
-if(!confirm("Reset ?"))return;
-
-await sb.from("sales").delete().neq("id","");
-await sb.from("sale_items").delete().neq("id","");
-
-state.sales=[];
-renderStats();
-alert("RESET OK");
+function renderSalesHistory(){
+  document.getElementById("salesHistory").innerHTML=state.sales.slice(0,10).map(s=>`
+    <div class="sale-row">
+      <b>${s.id}</b><br>
+      ${new Date(s.createdAt).toLocaleString("fr-FR")}<br>
+      Paiement: ${s.method} · Total: ${s.total}€<br>
+      ${s.items.map(i=>`${i.name} x${i.qty}`).join(", ")}
+    </div>
+  `).join("") || "Aucune vente enregistrée";
 }
-
-function setMode(m){state.mode=m;}
-
-function connectPrinter(){
-alert("USB OK (mock)");
-}
-
-/* ADMIN HOLD */
-let timer=null;
-document.getElementById("header").addEventListener("mousedown",()=>{
-timer=setTimeout(()=>openAdmin(),800);
-});
-document.getElementById("header").addEventListener("mouseup",()=>clearTimeout(timer));
 
 function openAdmin(){
-document.getElementById("adminBox").style.display="flex";
+  const code=prompt("Code admin");
+  if(code!==ADMIN_CODE)return;
+
+  document.getElementById("adminName").value=state.event.name;
+  document.getElementById("adminDate").value=state.event.date;
+  document.getElementById("adminLocation").value=state.event.location;
+
+  renderAdminTickets();
+  renderStats();
+  renderSalesHistory();
+  document.getElementById("adminBox").style.display="flex";
 }
 
 function closeAdmin(){
-document.getElementById("adminBox").style.display="none";
+  document.getElementById("adminBox").style.display="none";
 }
 
-load();
-</script>
+async function saveEvent(){
+  if(!sb){
+    alert("Supabase non connecté");
+    return;
+  }
 
+  const name=document.getElementById("adminName").value;
+  const event_date=document.getElementById("adminDate").value;
+  const location=document.getElementById("adminLocation").value;
+
+  const res=await sb.from("event_settings").upsert({
+    id:"main",
+    name,
+    event_date,
+    location,
+    updated_at:new Date().toISOString()
+  });
+
+  if(res.error){
+    alert(res.error.message);
+    return;
+  }
+
+  await loadSupabase();
+  toast("Événement sauvegardé");
+}
+
+async function createTicket(){
+  if(!sb){
+    alert("Supabase non connecté");
+    return;
+  }
+
+  const name=document.getElementById("newTicketName").value.trim();
+  const price=Number(document.getElementById("newTicketPrice").value);
+  const type=document.getElementById("newTicketType").value;
+
+  if(!name || !price){
+    alert("Nom ou prix manquant");
+    return;
+  }
+
+  const res=await sb.from("tickets").insert({
+    name,
+    price,
+    type,
+    is_active:true,
+    sort_order:99
+  });
+
+  if(res.error){
+    alert(res.error.message);
+    return;
+  }
+
+  document.getElementById("newTicketName").value="";
+  document.getElementById("newTicketPrice").value="";
+
+  await loadSupabase();
+  renderAdminTickets();
+  toast("Billet ajouté");
+}
+
+function renderAdminTickets(){
+  document.getElementById("adminEntry").innerHTML=state.tickets.entry.map(t=>`
+    <div class="admin-row">
+      <input value="${t.name}" onchange="updateTicket('${t.id}','name',this.value)">
+      <input value="${t.price}" onchange="updateTicket('${t.id}','price',this.value)">
+      <button class="red" onclick="deleteTicket('${t.id}')">Suppr.</button>
+    </div>
+  `).join("");
+
+  document.getElementById("adminAtelier").innerHTML=state.tickets.atelier.map(t=>`
+    <div class="admin-row">
+      <input value="${t.name}" onchange="updateTicket('${t.id}','name',this.value)">
+      <input value="${t.price}" onchange="updateTicket('${t.id}','price',this.value)">
+      <button class="red" onclick="deleteTicket('${t.id}')">Suppr.</button>
+    </div>
+  `).join("");
+}
+
+async function updateTicket(id,field,value){
+  if(!sb)return;
+
+  const patch={};
+  patch[field]=field==="price"?Number(value):value;
+
+  const res=await sb.from("tickets").update(patch).eq("id",id);
+
+  if(res.error){
+    alert(res.error.message);
+    return;
+  }
+
+  await loadSupabase();
+  renderAdminTickets();
+  toast("Billet modifié");
+}
+
+async function deleteTicket(id){
+  if(!sb)return;
+
+  const res=await sb.from("tickets").update({is_active:false}).eq("id",id);
+
+  if(res.error){
+    alert(res.error.message);
+    return;
+  }
+
+  await loadSupabase();
+  renderAdminTickets();
+  toast("Billet supprimé");
+}
+
+async function resetSales(){
+  if(!sb){
+    alert("Supabase non connecté");
+    return;
+  }
+
+  if(!confirm("Voulez-vous vraiment supprimer toutes les ventes et remettre les statistiques à zéro ?"))return;
+
+  const itemRes=await sb.from("sale_items").delete().neq("id","00000000-0000-0000-0000-000000000000");
+
+  if(itemRes.error){
+    alert("Erreur reset détails: "+itemRes.error.message);
+    return;
+  }
+
+  const saleRes=await sb.from("sales").delete().neq("id","");
+
+  if(saleRes.error){
+    alert("Erreur reset ventes: "+saleRes.error.message);
+    return;
+  }
+
+  state.sales=[];
+  renderStats();
+  renderSalesHistory();
+  toast("Statistiques remises à zéro");
+}
+
+document.getElementById("adminHold").addEventListener("mousedown",()=>{holdTimer=setTimeout(openAdmin,1000)});
+document.getElementById("adminHold").addEventListener("mouseup",()=>clearTimeout(holdTimer));
+document.getElementById("adminHold").addEventListener("mouseleave",()=>clearTimeout(holdTimer));
+document.getElementById("adminHold").addEventListener("touchstart",()=>{holdTimer=setTimeout(openAdmin,1000)});
+document.getElementById("adminHold").addEventListener("touchend",()=>clearTimeout(holdTimer));
+
+render();
+loadSupabase();
+</script>
 </body>
 </html>
