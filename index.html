@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<title>Billetterie JMW PRO MAX</title>
+<title>Billetterie JMW PRO MAX OFFLINE</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
@@ -47,10 +47,12 @@ button{border:0;border-radius:16px;padding:16px;font-size:18px;font-weight:700;c
 .admin-btn{width:100%;margin-top:8px;color:white;background:#111827}
 .green{background:#16a34a}
 .red{background:#ef4444}
+.blue{background:#2563eb}
 .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
 .stat{background:#f8fafc;border-radius:16px;padding:14px}
 .stat b{font-size:28px}
 .sale-row{background:#f8fafc;border-radius:14px;padding:12px;margin-bottom:8px}
+.offline-box{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:16px;padding:14px;margin:12px 0;font-weight:700}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111827;color:white;padding:15px 24px;border-radius:16px;font-size:20px;font-weight:700;display:none;z-index:1500}
 .loading{position:fixed;inset:0;background:rgba(255,255,255,.55);display:none;align-items:center;justify-content:center;z-index:1400}
 .loading div{background:white;border-radius:20px;padding:24px 34px;font-size:24px;font-weight:700}
@@ -123,6 +125,8 @@ button{border:0;border-radius:16px;padding:16px;font-size:18px;font-weight:700;c
       <div class="stat">CA CB<br><b id="statCB">0€</b></div>
     </div>
 
+    <div class="offline-box" id="offlineInfo">Offline: 0 vente à synchroniser</div>
+    <button class="admin-btn blue" onclick="syncOfflineSales()">Synchroniser ventes offline</button>
     <button class="admin-btn red" onclick="resetSales()">Reset statistiques / ventes</button>
 
     <h3>Dernières ventes</h3>
@@ -158,12 +162,14 @@ button{border:0;border-radius:16px;padding:16px;font-size:18px;font-weight:700;c
 const SUPABASE_URL="https://twcgyjhtgxtzaohkzuzg.supabase.co";
 const SUPABASE_KEY="sb_publishable_Vn8zxLyyMX2OG2NtbCbHKA_8YcQqe1S";
 const ADMIN_CODE="2026";
+const OFFLINE_KEY="jmw_offline_sales_v2";
 
 let sb=null;
 let device=null;
 let endpoint=null;
 let holdTimer=null;
 let printing=false;
+let syncing=false;
 
 let state={
   mode:localStorage.getItem("jmw_mode") || "panier",
@@ -187,7 +193,9 @@ let state={
   sales:[]
 };
 
-function setStatus(msg){document.getElementById("status").textContent=msg;}
+function setStatus(msg){
+  document.getElementById("status").textContent=msg;
+}
 
 function toast(msg){
   const t=document.getElementById("toast");
@@ -202,6 +210,38 @@ function setLoading(v){
   document.querySelectorAll(".ticket,.pay").forEach(b=>b.disabled=v);
 }
 
+function getOfflineSales(){
+  try{return JSON.parse(localStorage.getItem(OFFLINE_KEY)||"[]")}
+  catch{return[]}
+}
+
+function setOfflineSales(list){
+  localStorage.setItem(OFFLINE_KEY,JSON.stringify(list));
+}
+
+function addOfflineSale(sale){
+  const list=getOfflineSales();
+  list.push({...sale,offline_at:new Date().toISOString()});
+  setOfflineSales(list);
+  updateStatus();
+}
+
+function offlineCount(){
+  return getOfflineSales().length;
+}
+
+function updateStatus(){
+  const net=navigator.onLine ? "Online" : "Offline";
+  const printer=device ? "USB connecté" : "USB non connecté";
+  const off=offlineCount();
+  setStatus(`${net} · ${printer} · ventes offline: ${off}`);
+
+  const box=document.getElementById("offlineInfo");
+  if(box){
+    box.textContent=`${net} · ${off} vente(s) offline à synchroniser`;
+  }
+}
+
 function initSupabase(){
   if(!window.supabase){
     setStatus("Supabase non chargé · mode local");
@@ -213,6 +253,12 @@ function initSupabase(){
 
 async function loadSupabase(){
   try{
+    if(!navigator.onLine){
+      updateStatus();
+      render();
+      return;
+    }
+
     if(!sb && !initSupabase()){
       render();
       return;
@@ -220,7 +266,11 @@ async function loadSupabase(){
 
     const ev=await sb.from("event_settings").select("*").eq("id","main").single();
     if(!ev.error && ev.data){
-      state.event={name:ev.data.name,date:ev.data.event_date,location:ev.data.location};
+      state.event={
+        name:ev.data.name,
+        date:ev.data.event_date,
+        location:ev.data.location
+      };
     }
 
     const res=await sb
@@ -237,13 +287,20 @@ async function loadSupabase(){
     }
 
     if(res.data && res.data.length>0){
-      state.tickets.entry=res.data.filter(t=>t.type==="entry").map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Entree"}));
-      state.tickets.atelier=res.data.filter(t=>t.type==="atelier").map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Atelier"}));
+      state.tickets.entry=res.data
+        .filter(t=>t.type==="entry")
+        .map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Entree"}));
+
+      state.tickets.atelier=res.data
+        .filter(t=>t.type==="atelier")
+        .map(t=>({id:t.id,name:t.name,price:Number(t.price),type:"Atelier"}));
     }
 
+    await syncOfflineSales(false);
     await loadSales();
-    setStatus("Supabase OK · "+(res.data||[]).length+" billets chargés");
+
     render();
+    updateStatus();
 
   }catch(e){
     setStatus("Erreur JS: "+e.message+" · mode local");
@@ -252,7 +309,7 @@ async function loadSupabase(){
 }
 
 async function loadSales(){
-  if(!sb)return;
+  if(!sb || !navigator.onLine)return;
 
   const res=await sb
     .from("sales")
@@ -311,9 +368,11 @@ function render(){
   `).join("") || "Aucun billet";
 
   document.getElementById("total").textContent=total()+"€";
+
   renderAdminTickets();
   renderStats();
   renderSalesHistory();
+  updateStatus();
 }
 
 function setMode(mode){
@@ -326,16 +385,22 @@ function setMode(mode){
 function handleTicket(id,kind){
   const t=state.tickets[kind].find(x=>x.id===id);
   if(!t)return;
-  if(state.mode==="rapide") printSingle(t,"ESP");
-  else add(id,kind);
+
+  if(state.mode==="rapide"){
+    printSingle(t,"ESP");
+  }else{
+    add(id,kind);
+  }
 }
 
 function add(id,kind){
   const t=state.tickets[kind].find(x=>x.id===id);
   if(!t)return;
+
   const f=state.cart.find(x=>x.id===id);
   if(f)f.qty++;
   else state.cart.push({...t,qty:1});
+
   render();
 }
 
@@ -345,8 +410,14 @@ function changeQty(index,delta){
   render();
 }
 
-function clearCart(){state.cart=[];render();}
-function total(){return state.cart.reduce((s,i)=>s+i.price*i.qty,0);}
+function clearCart(){
+  state.cart=[];
+  render();
+}
+
+function total(){
+  return state.cart.reduce((s,i)=>s+i.price*i.qty,0);
+}
 
 function clean(v){
   return String(v).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/€/g," EUR").replace(/[^\x20-\x7E\n]/g,"");
@@ -374,14 +445,18 @@ async function connectPrinter(){
     for(const i of device.configuration.interfaces){
       for(const alt of i.alternates){
         const ep=alt.endpoints.find(e=>e.direction==="out");
-        if(ep){iface=i.interfaceNumber;endpoint=ep.endpointNumber;break;}
+        if(ep){
+          iface=i.interfaceNumber;
+          endpoint=ep.endpointNumber;
+          break;
+        }
       }
       if(endpoint)break;
     }
 
     await device.claimInterface(iface);
-    setStatus("Imprimante connectée: "+device.productName);
     toast("Imprimante connectée");
+    updateStatus();
   }catch(e){
     setStatus("Erreur imprimante: "+e.message);
   }
@@ -392,7 +467,9 @@ function saleId(){
   return "V"+String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+"-"+Math.floor(1000+Math.random()*9000);
 }
 
-function codeTicket(prefix){return prefix+"-"+Math.random().toString(36).substring(2,10).toUpperCase();}
+function codeTicket(prefix){
+  return prefix+"-"+Math.random().toString(36).substring(2,10).toUpperCase();
+}
 
 function ticketData(item,method,sale,code){
   return concat([
@@ -444,6 +521,7 @@ async function printOne(item,method,sale){
 async function printSingle(item,method){
   if(printing)return;
   setLoading(true);
+
   const sale=saleId();
   const ok=await printOne(item,method,sale);
 
@@ -459,12 +537,14 @@ async function printSingle(item,method){
 
 async function pay(method){
   if(printing)return;
+
   if(state.cart.length===0){
     alert("Panier vide");
     return;
   }
 
   setLoading(true);
+
   const sale=saleId();
   const items=JSON.parse(JSON.stringify(state.cart));
   const saleTotal=total();
@@ -481,15 +561,29 @@ async function pay(method){
   }
 
   await saveSale(sale,method,saleTotal,items);
+
   state.cart=[];
   await loadSales();
   render();
   toast("Vente imprimée");
+
   setLoading(false);
 }
 
 async function saveSale(sale,method,saleTotal,items){
-  if(!sb)return;
+  const localSale={
+    id:sale,
+    method,
+    total:saleTotal,
+    createdAt:new Date().toISOString(),
+    items:JSON.parse(JSON.stringify(items))
+  };
+
+  if(!navigator.onLine || !sb){
+    addOfflineSale(localSale);
+    state.sales.unshift(localSale);
+    return;
+  }
 
   const saleRes=await sb.from("sales").insert({
     id:sale,
@@ -498,7 +592,8 @@ async function saveSale(sale,method,saleTotal,items){
   });
 
   if(saleRes.error){
-    alert("Vente imprimée mais non sauvegardée: "+saleRes.error.message);
+    addOfflineSale(localSale);
+    state.sales.unshift(localSale);
     return;
   }
 
@@ -514,7 +609,74 @@ async function saveSale(sale,method,saleTotal,items){
   const itemRes=await sb.from("sale_items").insert(rows);
 
   if(itemRes.error){
-    alert("Erreur détails vente: "+itemRes.error.message);
+    addOfflineSale(localSale);
+    state.sales.unshift(localSale);
+  }
+}
+
+async function syncOfflineSales(showAlert=true){
+  if(syncing)return;
+
+  const list=getOfflineSales();
+  if(list.length===0){
+    updateStatus();
+    if(showAlert)toast("Aucune vente offline");
+    return;
+  }
+
+  if(!navigator.onLine){
+    if(showAlert)alert("Pas de connexion internet");
+    updateStatus();
+    return;
+  }
+
+  if(!sb && !initSupabase()){
+    if(showAlert)alert("Supabase non connecté");
+    updateStatus();
+    return;
+  }
+
+  syncing=true;
+  const remain=[];
+
+  for(const sale of list){
+    const saleRes=await sb.from("sales").insert({
+      id:sale.id,
+      payment_method:sale.method,
+      total:sale.total
+    });
+
+    if(saleRes.error){
+      remain.push(sale);
+      continue;
+    }
+
+    const rows=sale.items.map(i=>({
+      sale_id:sale.id,
+      ticket_id:String(i.id).length>20?i.id:null,
+      ticket_name:i.name,
+      ticket_type:i.type,
+      price:i.price,
+      quantity:i.qty
+    }));
+
+    const itemRes=await sb.from("sale_items").insert(rows);
+
+    if(itemRes.error){
+      remain.push(sale);
+    }
+  }
+
+  setOfflineSales(remain);
+  syncing=false;
+
+  await loadSales();
+  render();
+  updateStatus();
+
+  if(showAlert){
+    if(remain.length===0)toast("Ventes offline synchronisées");
+    else alert("Sync partielle: "+remain.length+" vente(s) restantes");
   }
 }
 
@@ -523,10 +685,10 @@ function renderStats(){
   let tickets=0, ca=0, esp=0, cb=0;
 
   state.sales.forEach(s=>{
-    ca+=s.total;
-    if(s.method==="ESP")esp+=s.total;
-    if(s.method==="CB")cb+=s.total;
-    s.items.forEach(i=>tickets+=i.qty);
+    ca+=Number(s.total || 0);
+    if(s.method==="ESP")esp+=Number(s.total || 0);
+    if(s.method==="CB")cb+=Number(s.total || 0);
+    (s.items || []).forEach(i=>tickets+=Number(i.qty || 0));
   });
 
   document.getElementById("statSales").textContent=salesCount;
@@ -542,7 +704,7 @@ function renderSalesHistory(){
       <b>${s.id}</b><br>
       ${new Date(s.createdAt).toLocaleString("fr-FR")}<br>
       Paiement: ${s.method} · Total: ${s.total}€<br>
-      ${s.items.map(i=>`${i.name} x${i.qty}`).join(", ")}
+      ${(s.items || []).map(i=>`${i.name} x${i.qty}`).join(", ")}
     </div>
   `).join("") || "Aucune vente enregistrée";
 }
@@ -558,13 +720,16 @@ function openAdmin(){
   renderAdminTickets();
   renderStats();
   renderSalesHistory();
+  updateStatus();
   document.getElementById("adminBox").style.display="flex";
 }
 
-function closeAdmin(){document.getElementById("adminBox").style.display="none";}
+function closeAdmin(){
+  document.getElementById("adminBox").style.display="none";
+}
 
 async function saveEvent(){
-  if(!sb){
+  if(!sb || !navigator.onLine){
     alert("Supabase non connecté");
     return;
   }
@@ -591,7 +756,7 @@ async function saveEvent(){
 }
 
 async function createTicket(){
-  if(!sb){
+  if(!sb || !navigator.onLine){
     alert("Supabase non connecté");
     return;
   }
@@ -645,7 +810,7 @@ function renderAdminTickets(){
 }
 
 async function updateTicket(id,field,value){
-  if(!sb)return;
+  if(!sb || !navigator.onLine)return;
 
   const patch={};
   patch[field]=field==="price"?Number(value):value;
@@ -663,7 +828,7 @@ async function updateTicket(id,field,value){
 }
 
 async function deleteTicket(id){
-  if(!sb)return;
+  if(!sb || !navigator.onLine)return;
 
   const res=await sb.from("tickets").update({is_active:false}).eq("id",id);
 
@@ -678,7 +843,7 @@ async function deleteTicket(id){
 }
 
 async function resetSales(){
-  if(!sb){
+  if(!sb || !navigator.onLine){
     alert("Supabase non connecté");
     return;
   }
@@ -692,9 +857,11 @@ async function resetSales(){
     return;
   }
 
+  setOfflineSales([]);
   state.sales=[];
   renderStats();
   renderSalesHistory();
+  updateStatus();
   toast("Statistiques remises à zéro");
 }
 
@@ -704,8 +871,19 @@ document.getElementById("adminHold").addEventListener("mouseleave",()=>clearTime
 document.getElementById("adminHold").addEventListener("touchstart",()=>{holdTimer=setTimeout(openAdmin,1000)});
 document.getElementById("adminHold").addEventListener("touchend",()=>clearTimeout(holdTimer));
 
+window.addEventListener("online",async()=>{
+  updateStatus();
+  await syncOfflineSales(false);
+});
+
+window.addEventListener("offline",()=>{
+  updateStatus();
+});
+
 render();
+updateStatus();
 loadSupabase();
+setInterval(updateStatus,5000);
 </script>
 </body>
 </html>
