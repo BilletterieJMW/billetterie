@@ -472,6 +472,10 @@ function codeTicket(prefix){
 }
 
 function ticketData(item,method,sale,code){
+  const openDrawer = method === "ESP"
+    ? cmd(0x1B,0x70,0x00,0x40,0x50)
+    : cmd();
+
   return concat([
     cmd(0x1B,0x40),
     cmd(0x1B,0x61,0x01),
@@ -497,6 +501,7 @@ function ticketData(item,method,sale,code){
     cmd(0x1D,0x21,0x00),
     txt("1 billet = 1 ticket\n"),
     txt("\n\n\n\n"),
+    openDrawer,
     cmd(0x1D,0x56,0x42,0x00)
   ]);
 }
